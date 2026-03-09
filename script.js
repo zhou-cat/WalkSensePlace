@@ -15,9 +15,17 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  if (footanimeBtn) {
+  if (dataBtn) {
+    footanimeBtn.addEventListener("click", () => {
+      window.location.href = "pages/**";
+    });
+  }
+
+    /* temperarly commented out
+   if (footanimeBtn) {
     footanimeBtn.addEventListener("click", () => {
       window.location.href = "pages/foot.html";
     });
   }
+  */ 
 });
