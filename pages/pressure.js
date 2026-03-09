@@ -14,10 +14,8 @@ function setPlot(filename) {
   plotTitle.textContent = prettifyFilename(filename);
 }
 
-// Change plot when dropdown changes
 plotSelect.addEventListener("change", () => {
   setPlot(plotSelect.value);
 });
 
-// If you ever want to set default based on the selected option:
 setPlot(plotSelect.value);

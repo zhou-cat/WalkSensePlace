@@ -4,7 +4,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>WalkSensePlace — Pressure Line Plots</title>
-
   <link rel="stylesheet" href="pressure.css" />
 </head>
 
@@ -22,14 +21,10 @@
     <div class="wrap nav-inner">
       <a class="back-link" href="../main - front page/index.html">← Back to Home</a>
 
-      <!-- Optional: swap between different exported plot files -->
       <div class="controls">
         <label for="plotSelect">Select plot:</label>
         <select id="plotSelect">
           <option value="pressure_plot.html">Default</option>
-          <!-- Add more exported plot files here if you want -->
-          <!-- <option value="pressure_line_plots_asphalt.html">Asphalt</option> -->
-          <!-- <option value="pressure_line_plots_grass.html">Grass</option> -->
         </select>
       </div>
     </div>
@@ -44,14 +39,14 @@
         </p>
       </div>
 
-      <!-- Plotly HTML embeds here -->
       <iframe
         id="plotFrame"
         class="plot-frame"
-        src="pressure_plot.html"
+        src="plots/pressure_plot.html"
         title="Pressure Line Plots"
       ></iframe>
     </section>
+  </main>
 
   <footer class="site-footer">
     <div class="wrap">

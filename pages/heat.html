@@ -4,8 +4,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>WalkSensePlace — Pressure Heat Maps</title>
-
-  <!-- same styling as pressure page -->
   <link rel="stylesheet" href="pressure.css" />
 </head>
 
@@ -21,16 +19,12 @@
 
   <nav class="nav-bar">
     <div class="wrap nav-inner">
-      <!-- go UP one level, then into main - front page -->
-      <a class="back-link" href="main -  front page/index.html">
-        ← Back to Home
-      </a>
+      <a class="back-link" href="../main - front page/index.html">← Back to Home</a>
 
       <div class="controls">
         <label for="plotSelect">Select plot:</label>
         <select id="plotSelect">
           <option value="heat_plot.html">Default</option>
-          <!-- add more exported plot files here if needed -->
         </select>
       </div>
     </div>
@@ -45,11 +39,10 @@
         </p>
       </div>
 
-      <!-- Plotly HTML embed -->
       <iframe
         id="plotFrame"
         class="plot-frame"
-        src="/Users/cathyc/Downloads/WalkSensePlace - HTML/pages - visuals/heat_plot.html"
+        src="plots/heat_plot.html"
         title="Pressure Heat Map"
       ></iframe>
     </section>
@@ -61,7 +54,6 @@
     </div>
   </footer>
 
-  <!-- reuse the same JS as pressure page -->
   <script src="pressure.js"></script>
 </body>
 </html>
