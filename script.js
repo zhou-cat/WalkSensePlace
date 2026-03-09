@@ -1,7 +1,8 @@
 document.addEventListener("DOMContentLoaded", () => {
   const pressureBtn = document.getElementById("pressuremapBtn");
   const heatmapBtn = document.getElementById("heatmapBtn");
-  const footanimeBtn = document.getElementById("footanimeBtn");
+  const dataBtn = document.getElementById("dataBtn");
+  //const footanimeBtn = document.getElementById("footanimeBtn");
 
   if (pressureBtn) {
     pressureBtn.addEventListener("click", () => {
@@ -16,7 +17,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   if (dataBtn) {
-    footanimeBtn.addEventListener("click", () => {
+    dataBtn.addEventListener("click", () => {
       window.location.href = "pages/**";
     });
   }
