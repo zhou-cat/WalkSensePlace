@@ -6,19 +6,19 @@ document.addEventListener("DOMContentLoaded", () => {
   
     if (pressureBtn) {
       pressureBtn.addEventListener("click", () => {
-        window.open("../pages - visuals/pressure.html", "_blank");
+        window.open("../pages/pressure.html", "_blank");
       });
     }
   
     if (heatmapBtn) {
       heatmapBtn.addEventListener("click", () => {
-        window.open("../pages - visuals/heat.html", "_blank");
+        window.open("../pages/heat.html", "_blank");
       });
     }
   
     if (footanimeBtn) {
       footanimeBtn.addEventListener("click", () => {
-        window.open("../pages - visuals/foot.html", "_blank");
+        window.open("../pages/foot.html", "_blank");
       });
     }
   
