@@ -1,5 +1,4 @@
 document.addEventListener("DOMContentLoaded", () => {
-
   const pressureBtn = document.getElementById("pressuremapBtn");
   const heatmapBtn = document.getElementById("heatmapBtn");
   const footanimeBtn = document.getElementById("footanimeBtn");
@@ -21,5 +20,4 @@ document.addEventListener("DOMContentLoaded", () => {
       window.location.href = "pages/foot.html";
     });
   }
-
 });
