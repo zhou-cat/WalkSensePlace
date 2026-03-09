@@ -1,0 +1,117 @@
+:root {
+    --bg: #f8f9fb;
+    --card: #ffffff;
+    --text: #111827;
+    --muted: #6b7280;
+    --border: #e5e7eb;
+    --header: #1f2933;
+  }
+  
+  * { box-sizing: border-box; }
+  
+  body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+  }
+  
+  .wrap {
+    max-width: 1600px;
+    margin: 0 auto;
+    padding: 0 18px;
+  }
+  
+  .site-header {
+    background: var(--header);
+    color: #fff;
+    padding: 26px 0;
+  }
+  
+  .title {
+    margin: 0 0 6px;
+    font-size: 1.9rem;
+  }
+  
+  .subtitle {
+    margin: 0;
+    color: #cbd5e1;
+    font-size: 0.95rem;
+  }
+  
+  .nav-bar {
+    background: #fff;
+    border-bottom: 1px solid var(--border);
+    padding: 10px 0;
+  }
+  
+  .nav-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+  
+  .back-link {
+    text-decoration: none;
+    color: var(--text);
+    font-weight: 700;
+  }
+  
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--muted);
+    font-size: 0.95rem;
+  }
+  
+  select {
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: #fff;
+  }
+  
+  main.wrap {
+    padding-top: 18px;
+    padding-bottom: 28px;
+  }
+  
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+    box-shadow: 0 8px 20px rgba(17, 24, 39, 0.06);
+  }
+  
+  .card-header h2 {
+    margin: 0 0 6px;
+    font-size: 1.15rem;
+  }
+  
+  .caption {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 0.92rem;
+  }
+  
+  .plot-frame {
+    width: 100%;
+    height: 1400px;          /* BIG enough for all subplots */
+    border: none;
+    border-radius: 10px;
+    background: #fff;
+  }
+  
+  .site-footer {
+    padding: 14px 0;
+    color: var(--muted);
+    text-align: center;
+    border-top: 1px solid var(--border);
+    background: #fff;
+  }
+  

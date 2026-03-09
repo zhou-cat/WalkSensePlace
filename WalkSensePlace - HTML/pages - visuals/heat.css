@@ -1,0 +1,111 @@
+:root {
+    --bg: #0b0c10;
+    --panel: #12131a;
+    --text: #e9e9ee;
+    --muted: #b8b8c5;
+    --border: rgba(255, 255, 255, 0.10);
+  }
+  
+  * { box-sizing: border-box; }
+  
+  html, body {
+    height: 100%;
+    margin: 0;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, rgba(255,255,255,0.04), transparent);
+  }
+  
+  .title-wrap h1 {
+    margin: 0;
+    font-size: 18px;
+    line-height: 1.2;
+  }
+  
+  .subtitle {
+    margin: 6px 0 0;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  
+  .actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  
+  .actions button,
+  .link-btn {
+    appearance: none;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text);
+    padding: 10px 12px;
+    border-radius: 10px;
+    cursor: pointer;
+    text-decoration: none;
+    font-size: 14px;
+  }
+  
+  .actions button:hover,
+  .link-btn:hover {
+    border-color: rgba(255, 255, 255, 0.22);
+  }
+  
+  .content {
+    height: calc(100% - 72px);
+    padding: 16px;
+  }
+  
+  .frame-wrap {
+    position: relative;
+    height: 100%;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+    background: var(--panel);
+  }
+  
+  iframe {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    display: block;
+    background: white;
+  }
+  
+  .error {
+    position: absolute;
+    inset: 0;
+    padding: 18px;
+    background: rgba(0,0,0,0.72);
+    display: grid;
+    place-content: center;
+    text-align: center;
+  }
+  
+  .error-details {
+    margin-top: 10px;
+    color: var(--muted);
+    max-width: 520px;
+  }
+  
+  .hidden {
+    display: none;
+  }
+  
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.95em;
+  }
+  
