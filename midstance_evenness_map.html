@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html>
+<head>
+    
+    <meta http-equiv="content-type" content="text/html; charset=UTF-8" />
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.js"></script>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/css/bootstrap.min.css"/>
+    <link rel="stylesheet" href="https://netdna.bootstrapcdn.com/bootstrap/3.0.0/css/bootstrap-glyphicons.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.2.0/css/all.min.css"/>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/python-visualization/folium/folium/templates/leaflet.awesome.rotate.min.css"/>
+    
+            <meta name="viewport" content="width=device-width,
+                initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+            <style>
+                #map_dbeb6c3ccb17308dc83e92a4f4f69c76 {
+                    position: relative;
+                    width: 100.0%;
+                    height: 100.0%;
+                    left: 0.0%;
+                    top: 0.0%;
+                }
+                .leaflet-container { font-size: 1rem; }
+            </style>
+
+            <style>html, body {
+                width: 100%;
+                height: 100%;
+                margin: 0;
+                padding: 0;
+            }
+            </style>
+
+            <style>#map {
+                position:absolute;
+                top:0;
+                bottom:0;
+                right:0;
+                left:0;
+                }
+            </style>
+
+            <script>
+                L_NO_TOUCH = false;
+                L_DISABLE_3D = false;
+            </script>
+
+        
+</head>
+<body>
+    
+    
+<div style="
+    position: fixed; bottom: 30px; left: 30px; z-index: 1000;
+    background: white; padding: 12px 16px; border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.25); font-family: Arial; font-size: 12px;
+">
+  <b style='font-size:13px;'>Midstance Evenness</b><br>
+  <span style='color:#d73027;'>●</span> Low (uneven gait)<br>
+  <span style='color:#fee08b;'>●</span> Medium<br>
+  <span style='color:#1a9850;'>●</span> High (even gait)<br>
+  <hr style='margin:6px 0'>
+  <i>Radius ∝ evenness score</i><br>
+  <i>Click marker for full stats</i>
+</div>
+    
+            <div class="folium-map" id="map_dbeb6c3ccb17308dc83e92a4f4f69c76" ></div>
+        
+</body>
+<script>
+    
+    
+            var map_dbeb6c3ccb17308dc83e92a4f4f69c76 = L.map(
+                "map_dbeb6c3ccb17308dc83e92a4f4f69c76",
+                {
+                    center: [51.50563333333334, -0.1291],
+                    crs: L.CRS.EPSG3857,
+                    ...{
+  "zoom": 15,
+  "zoomControl": true,
+  "preferCanvas": false,
+}
+
+                }
+            );
+
+            
+
+        
+    
+            var tile_layer_a40deab21f01237cb3f52cde0123823b = L.tileLayer(
+                "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+                {
+  "minZoom": 0,
+  "maxZoom": 20,
+  "maxNativeZoom": 20,
+  "noWrap": false,
+  "attribution": "\u0026copy; \u003ca href=\"https://www.openstreetmap.org/copyright\"\u003eOpenStreetMap\u003c/a\u003e contributors \u0026copy; \u003ca href=\"https://carto.com/attributions\"\u003eCARTO\u003c/a\u003e",
+  "subdomains": "abcd",
+  "detectRetina": false,
+  "tms": false,
+  "opacity": 1,
+}
+
+            );
+        
+    
+            tile_layer_a40deab21f01237cb3f52cde0123823b.addTo(map_dbeb6c3ccb17308dc83e92a4f4f69c76);
+        
+    
+            var circle_marker_cbe9f7aab60048d34e7a8a437fd3bd43 = L.circleMarker(
+                [51.5074, -0.1278],
+                {"bubblingMouseEvents": true, "color": "#fed27f", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#fed27f", "fillOpacity": 0.55, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 79.277, "stroke": true, "weight": 2}
+            ).addTo(map_dbeb6c3ccb17308dc83e92a4f4f69c76);
+        
+    
+        var popup_71dd620458870c5ce54f4c64be82aac7 = L.popup({
+  "maxWidth": 280,
+});
+
+        
+            
+                var html_8cecd9dc56cb1e5096f24a569623aa91 = $(`<div id="html_8cecd9dc56cb1e5096f24a569623aa91" style="width: 100.0%; height: 100.0%;">     <div style='font-family:Arial; min-width:220px;'>       <h4 style='margin:0 0 6px 0; color:#fed27f;'>Brick</h4>       <table style='border-collapse:collapse; font-size:12px; width:100%;'>         <tr><td><b>Steps recorded</b></td><td>46</td></tr>         <tr style='background:#f5f5f5'>           <td><b>Evenness score</b></td>           <td>0.9879 ± 0.0034</td></tr>         <tr><td><b>Unevenness score</b></td>           <td>0.0120 ± 0.0034</td></tr>         <tr style='background:#f5f5f5'>           <td><b>Shannon H (bits)</b></td><td>3.5418</td></tr>         <tr><td><b>CV spatial</b></td><td>0.2423</td></tr>         <tr style='background:#f5f5f5'>           <td><b>Mean stance (ms)</b></td><td>211.6</td></tr>         <tr><td><b>Lat / Lon</b></td><td>51.50740, -0.12780</td></tr>       </table>     </div>     </div>`)[0];
+                popup_71dd620458870c5ce54f4c64be82aac7.setContent(html_8cecd9dc56cb1e5096f24a569623aa91);
+            
+        
+
+        circle_marker_cbe9f7aab60048d34e7a8a437fd3bd43.bindPopup(popup_71dd620458870c5ce54f4c64be82aac7)
+        ;
+
+        
+    
+    
+            circle_marker_cbe9f7aab60048d34e7a8a437fd3bd43.bindTooltip(
+                `<div>
+                     Brick  |  Evenness: 0.9879  |  Unevenness: 0.0120
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var marker_85e5e4c178a764fb8a4341681b3c174c = L.marker(
+                [51.5074, -0.1278],
+                {
+}
+            ).addTo(map_dbeb6c3ccb17308dc83e92a4f4f69c76);
+        
+    
+            var div_icon_fad60ff0aeb3cdfcca8f165a36732901 = L.divIcon({
+  "html": "\u003cdiv style=\"font-size:11px; font-weight:bold; color:#333; text-shadow:1px 1px 2px white;\"\u003eBrick\u003cbr\u003eE=0.988\u003c/div\u003e",
+  "iconSize": [90, 30],
+  "iconAnchor": [45, 0],
+  "className": "empty",
+});
+        
+    
+                marker_85e5e4c178a764fb8a4341681b3c174c.setIcon(div_icon_fad60ff0aeb3cdfcca8f165a36732901);
+            
+    
+            var circle_marker_8aed7a2d08426e22c9688463e369e22c = L.circleMarker(
+                [51.5005, -0.1245],
+                {"bubblingMouseEvents": true, "color": "#cbe982", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#cbe982", "fillOpacity": 0.55, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 79.3574, "stroke": true, "weight": 2}
+            ).addTo(map_dbeb6c3ccb17308dc83e92a4f4f69c76);
+        
+    
+        var popup_855bc58a8b2deb6d1e9f621067773814 = L.popup({
+  "maxWidth": 280,
+});
+
+        
+            
+                var html_fae0a8d5f7994cc8f5b22f26afc2e283 = $(`<div id="html_fae0a8d5f7994cc8f5b22f26afc2e283" style="width: 100.0%; height: 100.0%;">     <div style='font-family:Arial; min-width:220px;'>       <h4 style='margin:0 0 6px 0; color:#cbe982;'>Concrete</h4>       <table style='border-collapse:collapse; font-size:12px; width:100%;'>         <tr><td><b>Steps recorded</b></td><td>61</td></tr>         <tr style='background:#f5f5f5'>           <td><b>Evenness score</b></td>           <td>0.9893 ± 0.0032</td></tr>         <tr><td><b>Unevenness score</b></td>           <td>0.0107 ± 0.0032</td></tr>         <tr style='background:#f5f5f5'>           <td><b>Shannon H (bits)</b></td><td>3.5466</td></tr>         <tr><td><b>CV spatial</b></td><td>0.2291</td></tr>         <tr style='background:#f5f5f5'>           <td><b>Mean stance (ms)</b></td><td>235.7</td></tr>         <tr><td><b>Lat / Lon</b></td><td>51.50050, -0.12450</td></tr>       </table>     </div>     </div>`)[0];
+                popup_855bc58a8b2deb6d1e9f621067773814.setContent(html_fae0a8d5f7994cc8f5b22f26afc2e283);
+            
+        
+
+        circle_marker_8aed7a2d08426e22c9688463e369e22c.bindPopup(popup_855bc58a8b2deb6d1e9f621067773814)
+        ;
+
+        
+    
+    
+            circle_marker_8aed7a2d08426e22c9688463e369e22c.bindTooltip(
+                `<div>
+                     Concrete  |  Evenness: 0.9893  |  Unevenness: 0.0107
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var marker_62673a559628e6cae7173d91bc994814 = L.marker(
+                [51.5005, -0.1245],
+                {
+}
+            ).addTo(map_dbeb6c3ccb17308dc83e92a4f4f69c76);
+        
+    
+            var div_icon_708f9b684d132c432ee9129f0d5f2712 = L.divIcon({
+  "html": "\u003cdiv style=\"font-size:11px; font-weight:bold; color:#333; text-shadow:1px 1px 2px white;\"\u003eConcrete\u003cbr\u003eE=0.989\u003c/div\u003e",
+  "iconSize": [90, 30],
+  "iconAnchor": [45, 0],
+  "className": "empty",
+});
+        
+    
+                marker_62673a559628e6cae7173d91bc994814.setIcon(div_icon_708f9b684d132c432ee9129f0d5f2712);
+            
+    
+            var circle_marker_87b7c4893a7bc194c4fa962bc0f60127 = L.circleMarker(
+                [51.509, -0.135],
+                {"bubblingMouseEvents": true, "color": "#e0f295", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#e0f295", "fillOpacity": 0.55, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 79.3424, "stroke": true, "weight": 2}
+            ).addTo(map_dbeb6c3ccb17308dc83e92a4f4f69c76);
+        
+    
+        var popup_29bc06f567e9761094ac3060cef014b5 = L.popup({
+  "maxWidth": 280,
+});
+
+        
+            
+                var html_f37487e4b08c7fa0182185e91e7aacd6 = $(`<div id="html_f37487e4b08c7fa0182185e91e7aacd6" style="width: 100.0%; height: 100.0%;">     <div style='font-family:Arial; min-width:220px;'>       <h4 style='margin:0 0 6px 0; color:#e0f295;'>Grass</h4>       <table style='border-collapse:collapse; font-size:12px; width:100%;'>         <tr><td><b>Steps recorded</b></td><td>43</td></tr>         <tr style='background:#f5f5f5'>           <td><b>Evenness score</b></td>           <td>0.9890 ± 0.0026</td></tr>         <tr><td><b>Unevenness score</b></td>           <td>0.0110 ± 0.0026</td></tr>         <tr style='background:#f5f5f5'>           <td><b>Shannon H (bits)</b></td><td>3.5457</td></tr>         <tr><td><b>CV spatial</b></td><td>0.2319</td></tr>         <tr style='background:#f5f5f5'>           <td><b>Mean stance (ms)</b></td><td>223.9</td></tr>         <tr><td><b>Lat / Lon</b></td><td>51.50900, -0.13500</td></tr>       </table>     </div>     </div>`)[0];
+                popup_29bc06f567e9761094ac3060cef014b5.setContent(html_f37487e4b08c7fa0182185e91e7aacd6);
+            
+        
+
+        circle_marker_87b7c4893a7bc194c4fa962bc0f60127.bindPopup(popup_29bc06f567e9761094ac3060cef014b5)
+        ;
+
+        
+    
+    
+            circle_marker_87b7c4893a7bc194c4fa962bc0f60127.bindTooltip(
+                `<div>
+                     Grass  |  Evenness: 0.9890  |  Unevenness: 0.0110
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var marker_1fbd840f9c669575e46a3c0bd77835b0 = L.marker(
+                [51.509, -0.135],
+                {
+}
+            ).addTo(map_dbeb6c3ccb17308dc83e92a4f4f69c76);
+        
+    
+            var div_icon_6da8908013003279c3cb60316c2a9a4a = L.divIcon({
+  "html": "\u003cdiv style=\"font-size:11px; font-weight:bold; color:#333; text-shadow:1px 1px 2px white;\"\u003eGrass\u003cbr\u003eE=0.989\u003c/div\u003e",
+  "iconSize": [90, 30],
+  "iconAnchor": [45, 0],
+  "className": "empty",
+});
+        
+    
+                marker_1fbd840f9c669575e46a3c0bd77835b0.setIcon(div_icon_6da8908013003279c3cb60316c2a9a4a);
+            
+    
+            var layer_control_565319d9879e2252080563dc9b58e57d_layers = {
+                base_layers : {
+                    "cartodbpositron" : tile_layer_a40deab21f01237cb3f52cde0123823b,
+                },
+                overlays :  {
+                },
+            };
+            let layer_control_565319d9879e2252080563dc9b58e57d = L.control.layers(
+                layer_control_565319d9879e2252080563dc9b58e57d_layers.base_layers,
+                layer_control_565319d9879e2252080563dc9b58e57d_layers.overlays,
+                {
+  "position": "topright",
+  "collapsed": true,
+  "autoZIndex": true,
+}
+            ).addTo(map_dbeb6c3ccb17308dc83e92a4f4f69c76);
+
+        
+</script>
+</html>
