@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Boston crossing density — kernel surface &amp; hexbins</title>
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;900&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --bg:#0c0f13;--panel:#12161c;--panel-2:#191f27;--line:#28313c;--line-soft:#1e2630;
+    --ink:#e9eef4;--ink-dim:#93a1b0;--ink-faint:#5f6d7c;
+    --hue:184;--accent:hsl(var(--hue),85%,52%);--accent-soft:hsl(var(--hue),40%,72%);--danger:#e0794f;
+    --radius:14px;
+    --mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+    --body:'IBM Plex Sans',system-ui,sans-serif;--display:'Archivo',system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{font-family:var(--body);background:var(--bg);color:var(--ink);overflow:hidden}
+  #map{position:absolute;inset:0;background:var(--bg);z-index:0}
+  a{color:var(--accent-soft)}
+
+  .panel{position:absolute;top:16px;left:16px;z-index:1000;width:326px;max-height:calc(100% - 32px);
+    display:flex;flex-direction:column;background:linear-gradient(180deg,var(--panel),#0f1319);
+    border:1px solid var(--line);border-radius:var(--radius);box-shadow:0 18px 50px rgba(0,0,0,.55);overflow:hidden}
+  .panel__scroll{overflow-y:auto;padding:0 18px 18px}
+  .panel__scroll::-webkit-scrollbar{width:10px}
+  .panel__scroll::-webkit-scrollbar-thumb{background:var(--line);border-radius:8px;border:3px solid var(--panel)}
+
+  .head{padding:18px 18px 15px;border-bottom:1px solid var(--line-soft)}
+  .zebra{height:9px;border-radius:2px;margin-bottom:13px;background:repeating-linear-gradient(90deg,var(--ink) 0 7px,transparent 7px 13px);opacity:.9}
+  .eyebrow{font-family:var(--mono);font-size:10.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-faint);margin:0 0 4px}
+  h1{font-family:var(--display);font-weight:900;font-size:25px;line-height:1.02;letter-spacing:-.02em;margin:0}
+  h1 .u{color:var(--accent)}
+
+  .sec{padding-top:17px}
+  .sec + .sec{border-top:1px solid var(--line-soft);margin-top:3px}
+  .sec__label{font-family:var(--mono);font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-dim);margin:0 0 11px;display:flex;justify-content:space-between;align-items:baseline}
+
+  .row{display:flex;gap:8px}
+  .btn{flex:1;font-family:var(--body);font-size:13px;font-weight:600;color:var(--ink);background:var(--panel-2);
+    border:1px solid var(--line);border-radius:9px;padding:9px 10px;cursor:pointer;transition:border-color .15s,background .15s,transform .04s}
+  .btn:hover{border-color:var(--accent);background:#1d2530}
+  .btn:active{transform:translateY(1px)}
+  .btn--ghost{background:transparent}
+  .btn--go{flex:0 0 auto;background:var(--accent);color:#06181b;border-color:transparent}
+  .btn--go:hover{background:hsl(var(--hue),90%,60%)}
+  .url{margin-top:8px;display:flex;gap:8px}
+  input[type=text]{flex:1;min-width:0;font-family:var(--mono);font-size:12px;color:var(--ink);background:#0c1015;border:1px solid var(--line);border-radius:9px;padding:9px 10px}
+  input[type=text]::placeholder{color:var(--ink-faint)}
+  input[type=text]:focus,.btn:focus-visible,.btn--go:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+
+  .seg{display:flex;background:#0c1015;border:1px solid var(--line);border-radius:9px;padding:3px;gap:3px}
+  .seg button{flex:1;font-family:var(--body);font-size:13px;font-weight:600;color:var(--ink-dim);background:transparent;border:0;border-radius:6px;padding:8px 6px;cursor:pointer;transition:background .15s,color .15s}
+  .seg button.active{background:var(--accent);color:#06181b}
+  .seg button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  .status{margin-top:10px;font-family:var(--mono);font-size:11.5px;color:var(--ink-dim);display:flex;align-items:center;gap:8px;min-height:16px}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);flex:0 0 auto}
+  .dot--warn{background:var(--danger)}
+  .badge{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--danger);border:1px solid color-mix(in srgb,var(--danger) 50%,transparent);padding:2px 6px;border-radius:5px;margin-left:auto}
+  .badge[hidden]{display:none}
+
+  .scale{height:16px;border-radius:4px;border:1px solid var(--line);
+    background:linear-gradient(90deg,hsl(var(--hue),35%,78%),hsl(var(--hue),55%,66%),hsl(var(--hue),72%,55%),hsl(var(--hue),88%,47%),hsl(var(--hue),96%,42%))}
+  .scale__ends{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10.5px;color:var(--ink-dim);margin-top:6px}
+
+  .grp[hidden]{display:none}
+  .ctrl{margin-bottom:13px}
+  .ctrl:last-child{margin-bottom:0}
+  .ctrl__top{display:flex;justify-content:space-between;font-size:12.5px;color:var(--ink);margin-bottom:6px}
+  .ctrl__top .v{font-family:var(--mono);color:var(--accent)}
+  input[type=range]{width:100%;height:4px;-webkit-appearance:none;appearance:none;background:var(--line);border-radius:4px;outline:none}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--accent);border:2px solid var(--panel);cursor:pointer}
+  input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:var(--accent);border:2px solid var(--panel);cursor:pointer}
+  input[type=range]:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
+
+  .note{font-size:11.5px;line-height:1.5;color:var(--ink-dim)}
+  .note[hidden]{display:none}
+  .note b{color:var(--ink);font-weight:600}
+
+  .toggle{position:absolute;top:16px;left:16px;z-index:1001;display:none;width:44px;height:44px;border-radius:11px;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer;font-size:18px}
+  @media (max-width:640px){.panel{width:calc(100% - 32px);max-height:calc(100% - 80px);top:70px}.panel.collapsed{display:none}.toggle{display:block}}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+  .leaflet-container{background:var(--bg)}
+  .leaflet-control-attribution{background:rgba(12,15,19,.8)!important;color:var(--ink-faint)!important}
+  .leaflet-control-attribution a{color:var(--ink-dim)!important}
+  .leaflet-tooltip{background:var(--panel);color:var(--ink);border:1px solid var(--line);font-family:var(--mono);font-size:12px;padding:4px 8px;box-shadow:0 6px 18px rgba(0,0,0,.5)}
+  .leaflet-tooltip-top:before{border-top-color:var(--line)}
+</style>
+</head>
+<body>
+<div id="map"></div>
+<button class="toggle" id="toggle" aria-label="Show or hide controls">☰</button>
+
+<aside class="panel" id="panel" aria-label="Crossing density controls">
+  <div class="head">
+    <div class="zebra" aria-hidden="true"></div>
+    <p class="eyebrow">Boston · pedestrian crossings</p>
+    <h1>Crossing <span class="u">density</span></h1>
+  </div>
+
+  <div class="panel__scroll">
+    <div class="sec">
+      <p class="sec__label">Data source <span class="badge" id="demoBadge">demo data</span></p>
+      <div class="row">
+        <button class="btn" id="fileBtn">Load GeoJSON…</button>
+        <button class="btn btn--ghost" id="demoBtn">Reset to demo</button>
+      </div>
+      <input type="file" id="fileInput" accept=".geojson,.json,application/geo+json,application/json" hidden>
+      <div class="url">
+        <input type="text" id="urlInput" placeholder="…/FeatureServer/0  or  GeoJSON URL">
+        <button class="btn btn--go" id="urlBtn">Load</button>
+      </div>
+      <div class="status" id="status"><span class="dot" id="statusDot"></span><span id="statusText">Showing demo points</span></div>
+    </div>
+
+    <div class="sec">
+      <p class="sec__label">View mode</p>
+      <div class="seg" role="group" aria-label="View mode">
+        <button id="modeSurface" class="active" aria-pressed="true">Density</button>
+        <button id="modeHex" aria-pressed="false">Hexbins</button>
+      </div>
+    </div>
+
+    <div class="sec">
+      <p class="sec__label">Saturation = crossing density</p>
+      <div class="scale" id="scale" aria-hidden="true"></div>
+      <div class="scale__ends"><span id="endLo">0</span><span id="endHi">150 /km²</span></div>
+    </div>
+
+    <div class="sec">
+      <p class="sec__label">Appearance</p>
+      <div class="ctrl">
+        <div class="ctrl__top"><span>Hue</span><span class="v" id="hueV">184°</span></div>
+        <input type="range" id="hue" min="0" max="360" value="184">
+      </div>
+
+      <div class="grp" id="grpSurface">
+        <div class="ctrl">
+          <div class="ctrl__top"><span>Bandwidth</span><span class="v" id="bwV">300 m</span></div>
+          <input type="range" id="bw" min="80" max="1000" step="10" value="300">
+        </div>
+        <div class="ctrl">
+          <div class="ctrl__top"><span>Max density</span><span class="v" id="maxDV">150 /km²</span></div>
+          <input type="range" id="maxD" min="5" max="1000" step="5" value="150">
+        </div>
+        <div class="ctrl">
+          <div class="ctrl__top"><span>Fill</span></div>
+          <div class="seg" role="group" aria-label="Fill style">
+            <button id="fillSmooth" class="active" aria-pressed="true">Smooth</button>
+            <button id="fillStepped" aria-pressed="false">Stepped</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="grp" id="grpHex" hidden>
+        <div class="ctrl">
+          <div class="ctrl__top"><span>Hex size</span><span class="v" id="hexSizeV">300 m</span></div>
+          <input type="range" id="hexSize" min="60" max="800" step="10" value="300">
+        </div>
+        <div class="ctrl">
+          <div class="ctrl__top"><span>Count ceiling</span><span class="v" id="hexCeilV">12 / hex</span></div>
+          <input type="range" id="hexCeil" min="1" max="60" value="12">
+        </div>
+      </div>
+    </div>
+
+    <div class="sec">
+      <p class="sec__label">Reading this map</p>
+      <p class="note" id="noteSurface"><b>A kernel density estimate</b> (quartic kernel) — the same method as ArcGIS Kernel Density. Color maps to crossings per km² on a fixed scale, not a screen-relative blur.<br><br>
+      <b>Bandwidth is the one real knob.</b> It's the kernel search radius: widen it and density spreads and flattens, narrow it and peaks sharpen. Tie it to a walking distance you can justify and report it.<br><br>
+      Set Max density once (the status line shows the current peak) so areas stay comparable. <b>Stepped</b> classifies the same surface into bands; for true isolines run Contour on the density raster in ArcGIS. Raw crossing density still leans toward busy arterials.</p>
+      <p class="note" id="noteHex" hidden><b>Hover a cell for its count.</b> This is the layer you'd feed an index — one value per fixed-geometry cell.<br><br>
+      <b>Only cells containing a crossing are drawn here.</b> For the real index, generate the full tessellation in ArcGIS (<i>Generate Tessellation</i> → <i>Summarize Within</i>) so zero-count cells exist too, then join these counts.<br><br>
+      The count ceiling fixes the color scale — keep it constant across any maps you compare.</p>
+    </div>
+  </div>
+</aside>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+(function(){
+  "use strict";
+  var $ = function(id){ return document.getElementById(id); };
+
+  // ---- map ------------------------------------------------------------
+  var map = L.map('map', { zoomControl:false, minZoom:10, maxZoom:18 }).setView([42.3601,-71.0589],12);
+  L.control.zoom({position:'bottomright'}).addTo(map);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    subdomains:'abcd', maxZoom:19
+  }).addTo(map);
+
+  // ---- state ----------------------------------------------------------
+  var points = [];                       // [[lat,lng], ...]
+  var mode = 'surface';                  // 'surface' | 'hex'
+  var hexLayer = L.layerGroup();
+  var surfaceOverlay = null;
+  var lastGrid = null;
+  var base = { text:'', warn:false };
+  var opts = { hue:184, bandwidth:300, maxDensity:150, fill:'smooth', hexSize:300, hexCeil:12, autoFit:true };
+
+  // ---- local metric plane around Boston -------------------------------
+  var LAT0=42.32, LNG0=-71.09, M_LAT=111320, M_LNG=111320*Math.cos(LAT0*Math.PI/180);
+  function proj(lat,lng){ return [ (lng-LNG0)*M_LNG, (lat-LAT0)*M_LAT ]; }
+  function unproj(x,y){ return [ LAT0 + y/M_LAT, LNG0 + x/M_LNG ]; }
+
+  // ---- shared saturation ramp (hue fixed, saturation climbs) ----------
+  var STOPS=[[0,35,78],[0.35,55,66],[0.55,72,55],[0.78,88,47],[1,96,42]];
+  function rampSL(t){
+    t=Math.max(0,Math.min(1,t));
+    for(var i=1;i<STOPS.length;i++){
+      if(t<=STOPS[i][0]){ var a=STOPS[i-1],b=STOPS[i],f=(t-a[0])/((b[0]-a[0])||1);
+        return [a[1]+(b[1]-a[1])*f, a[2]+(b[2]-a[2])*f]; }
+    }
+    return [96,42];
+  }
+  function rampColor(t,h){ var sl=rampSL(t); return 'hsl('+h+','+sl[0].toFixed(1)+'%,'+sl[1].toFixed(1)+'%)'; }
+  function hslToRgb(h,s,l){
+    s/=100; l/=100; var c=(1-Math.abs(2*l-1))*s, x=c*(1-Math.abs((h/60)%2-1)), m=l-c/2, r,g,b;
+    if(h<60){r=c;g=x;b=0;}else if(h<120){r=x;g=c;b=0;}else if(h<180){r=0;g=c;b=x;}
+    else if(h<240){r=0;g=x;b=c;}else if(h<300){r=x;g=0;b=c;}else{r=c;g=0;b=x;}
+    return [Math.round((r+m)*255),Math.round((g+m)*255),Math.round((b+m)*255)];
+  }
+  function rampRGB(t,h){ var sl=rampSL(t); return hslToRgb(h,sl[0],sl[1]); }
+
+  // ---- render dispatch ------------------------------------------------
+  function render(){ mode==='surface' ? renderSurface() : renderHex(); }
+
+  // ---- kernel density surface (quartic kernel, ArcGIS-style) ----------
+  function computeGrid(){
+    if(!points.length){ lastGrid=null; return; }
+    var h=opts.bandwidth, h2=h*h, P=[], minx=Infinity,miny=Infinity,maxx=-Infinity,maxy=-Infinity;
+    for(var i=0;i<points.length;i++){ var m=proj(points[i][0],points[i][1]); P.push(m);
+      if(m[0]<minx)minx=m[0]; if(m[0]>maxx)maxx=m[0]; if(m[1]<miny)miny=m[1]; if(m[1]>maxy)maxy=m[1]; }
+    minx-=h; miny-=h; maxx+=h; maxy+=h;
+    var W=maxx-minx, H=maxy-miny, cell=Math.min(Math.max(h/4,25),200);
+    var nx=Math.max(2,Math.min(Math.ceil(W/cell),260)), ny=Math.max(2,Math.min(Math.ceil(H/cell),260));
+    var cx=W/nx, cy=H/ny, grid=new Float64Array(nx*ny), coef=3/(Math.PI*h2);
+    var rx=Math.ceil(h/cx), ry=Math.ceil(h/cy);
+    for(var p=0;p<P.length;p++){
+      var px=P[p][0], py=P[p][1], gi=(px-minx)/cx, gj=(py-miny)/cy;
+      var i0=Math.max(0,Math.floor(gi)-rx), i1=Math.min(nx-1,Math.floor(gi)+rx);
+      var j0=Math.max(0,Math.floor(gj)-ry), j1=Math.min(ny-1,Math.floor(gj)+ry);
+      for(var jj=j0;jj<=j1;jj++){ var ccy=miny+(jj+0.5)*cy, ddy=ccy-py;
+        for(var ii=i0;ii<=i1;ii++){ var ccx=minx+(ii+0.5)*cx, ddx=ccx-px, d2=ddx*ddx+ddy*ddy;
+          if(d2<h2){ var w=1-d2/h2; grid[jj*nx+ii]+=coef*w*w; } } }
+    }
+    var peak=0; for(var k=0;k<grid.length;k++){ if(grid[k]>peak)peak=grid[k]; }
+    lastGrid={grid:grid,nx:nx,ny:ny,minx:minx,miny:miny,maxx:maxx,maxy:maxy,peak:peak*1e6};
+  }
+  function niceCeil(x){ if(!(x>0)) return 50; var e=Math.pow(10,Math.floor(Math.log10(x))), f=x/e;
+    var n=f<=1?1:f<=2?2:f<=5?5:10; return Math.round(n*e); }
+  function maybeAutoFit(){
+    if(opts.autoFit && lastGrid){
+      opts.maxDensity=Math.max(5,Math.min(1000,niceCeil(lastGrid.peak)));
+      $('maxD').value=opts.maxDensity; $('maxDV').textContent=opts.maxDensity+' /km\u00b2';
+      updateEnds(); opts.autoFit=false;
+    }
+  }
+  function paintSurface(){
+    if(surfaceOverlay){ map.removeLayer(surfaceOverlay); surfaceOverlay=null; }
+    if(!lastGrid){ refreshStatus(null); return; }
+    var g=lastGrid, nx=g.nx, ny=g.ny, maxD=opts.maxDensity, h=opts.hue, bands=6, stepped=(opts.fill==='stepped');
+    var cvs=document.createElement('canvas'); cvs.width=nx; cvs.height=ny;
+    var ctx=cvs.getContext('2d'), img=ctx.createImageData(nx,ny), data=img.data;
+    for(var jj=0;jj<ny;jj++){ var imgRow=ny-1-jj;
+      for(var ii=0;ii<nx;ii++){
+        var dens=g.grid[jj*nx+ii]*1e6, t=maxD>0?dens/maxD:0; if(t>1)t=1; if(t<0)t=0;
+        var tc=t, alpha, o=(imgRow*nx+ii)*4;
+        if(t<=0.02){ data[o+3]=0; continue; }
+        if(stepped){ var idx=Math.min(bands-1,Math.floor(t*bands)); tc=(idx+0.5)/bands; alpha=0.30+(idx/(bands-1))*0.58; }
+        else { alpha=0.30+t*0.58; }
+        if(alpha>0.9)alpha=0.9;
+        var rgb=rampRGB(tc,h);
+        data[o]=rgb[0]; data[o+1]=rgb[1]; data[o+2]=rgb[2]; data[o+3]=Math.round(alpha*255);
+      }
+    }
+    ctx.putImageData(img,0,0);
+    var sw=unproj(g.minx,g.miny), ne=unproj(g.maxx,g.maxy);
+    surfaceOverlay=L.imageOverlay(cvs.toDataURL(),[[sw[0],sw[1]],[ne[0],ne[1]]],{opacity:1,interactive:false}).addTo(map);
+    refreshStatus(nx+'\u00d7'+ny+' grid \u00b7 peak '+Math.round(g.peak)+'/km\u00b2');
+  }
+  function renderSurface(){
+    if(map.hasLayer(hexLayer)) map.removeLayer(hexLayer); hexLayer.clearLayers();
+    computeGrid(); maybeAutoFit(); paintSurface();
+  }
+
+  // ---- hex grid (pointy-top, fixed ground size) -----------------------
+  function cubeRound(q,r){ var x=q,z=r,y=-x-z,rx=Math.round(x),ry=Math.round(y),rz=Math.round(z);
+    var dx=Math.abs(rx-x),dy=Math.abs(ry-y),dz=Math.abs(rz-z);
+    if(dx>dy&&dx>dz)rx=-ry-rz; else if(dy>dz)ry=-rx-rz; else rz=-rx-ry; return rx+','+rz; }
+  function renderHex(){
+    if(surfaceOverlay){ map.removeLayer(surfaceOverlay); surfaceOverlay=null; }
+    hexLayer.clearLayers();
+    if(points.length){
+      var R=opts.hexSize, bins={};
+      for(var i=0;i<points.length;i++){ var m=proj(points[i][0],points[i][1]);
+        var q=(Math.sqrt(3)/3*m[0]-1/3*m[1])/R, r=(2/3*m[1])/R; var key=cubeRound(q,r); bins[key]=(bins[key]||0)+1; }
+      var ceil=opts.hexCeil, cells=0, maxCount=0;
+      for(var key in bins){ var count=bins[key]; cells++; if(count>maxCount)maxCount=count;
+        var qr=key.split(','), qq=+qr[0], rr=+qr[1], cxm=R*Math.sqrt(3)*(qq+rr/2), cym=R*1.5*rr, verts=[];
+        for(var v=0;v<6;v++){ var ang=Math.PI/180*(60*v-30); verts.push(unproj(cxm+R*Math.cos(ang),cym+R*Math.sin(ang))); }
+        L.polygon(verts,{stroke:true,color:'#0c0f13',weight:0.6,fillColor:rampColor(count/ceil,opts.hue),fillOpacity:0.82})
+          .bindTooltip(count+' crossing'+(count===1?'':'s'),{sticky:true,direction:'top'}).addTo(hexLayer);
+      }
+      refreshStatus(cells+' hexes \u00b7 peak '+maxCount+'/cell');
+    } else { refreshStatus(null); }
+    hexLayer.addTo(map);
+  }
+
+  // ---- geometry -> one point per feature ------------------------------
+  function centroid(c){ var sx=0,sy=0,n=0; for(var i=0;i<c.length;i++){sx+=c[i][0];sy+=c[i][1];n++;} return n?[sx/n,sy/n]:null; }
+  function flatten(a,out){ if(typeof a[0]==='number'){out.push(a);return;} for(var i=0;i<a.length;i++) flatten(a[i],out); }
+  function featurePoint(g){ if(!g) return null; if(g.type==='Point') return [g.coordinates[0],g.coordinates[1]]; var f=[]; flatten(g.coordinates,f); return centroid(f); }
+  function ingest(gj){ var feats=gj.features||(gj.type==='Feature'?[gj]:[]), pts=[], skipped=0;
+    for(var i=0;i<feats.length;i++){ var p=featurePoint(feats[i]&&feats[i].geometry);
+      if(p&&isFinite(p[0])&&isFinite(p[1])) pts.push([p[1],p[0]]); else skipped++; } return {pts:pts,skipped:skipped}; }
+
+  // ---- status ---------------------------------------------------------
+  function setStatus(t,w){ $('statusText').textContent=t; $('statusDot').className='dot'+(w?' dot--warn':''); }
+  function setBase(t,w){ base={text:t,warn:!!w}; refreshStatus(null); }
+  function refreshStatus(extra){ setStatus(base.text+(extra?(' \u00b7 '+extra):''), base.warn); }
+
+  function loadFeatures(gj,label){
+    var r=ingest(gj);
+    if(!r.pts.length){ setBase('No usable geometry found in that file.',true); return; }
+    points=r.pts; $('demoBadge').hidden=true; opts.autoFit=true;
+    setBase(r.pts.length.toLocaleString()+' crossings \u00b7 '+label+(r.skipped?(' \u00b7 '+r.skipped+' skipped'):''),false);
+    render();
+    var b=L.latLngBounds(points); if(b.isValid()) map.fitBounds(b.pad(0.05));
+  }
+
+  // ---- loaders --------------------------------------------------------
+  $('fileBtn').addEventListener('click',function(){ $('fileInput').click(); });
+  $('fileInput').addEventListener('change',function(e){ var f=e.target.files[0]; if(!f) return; setBase('Reading '+f.name+'…',false);
+    var rd=new FileReader(); rd.onload=function(){ try{ loadFeatures(JSON.parse(rd.result),f.name); }catch(err){ setBase('Could not parse that file as GeoJSON.',true); } };
+    rd.onerror=function(){ setBase('Could not read that file.',true); }; rd.readAsText(f); });
+  async function fetchUrl(raw){
+    var url=raw.trim();
+    if(/(Feature|Map)Server/i.test(url)){
+      var b=url.replace(/\/query.*$/i,'').replace(/\/+$/,''), all=[], offset=0, page=1000, guard=0;
+      setBase('Querying ArcGIS service…',false);
+      while(guard++ < 250){
+        var q=b+'/query?where=1%3D1&outFields=*&outSR=4326&f=geojson&resultOffset='+offset+'&resultRecordCount='+page;
+        var res=await fetch(q); if(!res.ok) throw new Error('HTTP '+res.status);
+        var gj=await res.json(); var fs=gj.features||[]; all=all.concat(fs);
+        setBase('Fetched '+all.length.toLocaleString()+' features…',false);
+        if(fs.length<page && !gj.exceededTransferLimit) break; offset+=page;
+      }
+      return {type:'FeatureCollection',features:all};
+    }
+    var r=await fetch(url); if(!r.ok) throw new Error('HTTP '+r.status); return await r.json();
+  }
+  function loadFromUrl(){ var v=$('urlInput').value; if(!v.trim()){ setBase('Paste a service or GeoJSON URL first.',true); return; }
+    fetchUrl(v).then(function(gj){ loadFeatures(gj,'from URL'); })
+      .catch(function(err){ setBase('Fetch failed ('+err.message+'). If it\u2019s a CORS block, download the GeoJSON and use Load.',true); }); }
+  $('urlBtn').addEventListener('click',loadFromUrl);
+  $('urlInput').addEventListener('keydown',function(e){ if(e.key==='Enter') loadFromUrl(); });
+
+  // ---- controls -------------------------------------------------------
+  var raf=null; function schedule(fn){ if(raf) cancelAnimationFrame(raf); raf=requestAnimationFrame(function(){ raf=null; fn(); }); }
+
+  $('hue').addEventListener('input',function(){ opts.hue=+this.value; document.documentElement.style.setProperty('--hue',opts.hue);
+    $('hueV').textContent=opts.hue+'\u00b0'; if(mode==='surface') paintSurface(); else renderHex(); });
+
+  $('bw').addEventListener('input',function(){ opts.bandwidth=+this.value; $('bwV').textContent=this.value+' m'; schedule(function(){ computeGrid(); paintSurface(); }); });
+  $('maxD').addEventListener('input',function(){ opts.maxDensity=+this.value; opts.autoFit=false; $('maxDV').textContent=this.value+' /km\u00b2'; updateEnds(); paintSurface(); });
+  function setFill(f){ opts.fill=f; $('fillSmooth').classList.toggle('active',f==='smooth'); $('fillSmooth').setAttribute('aria-pressed',f==='smooth');
+    $('fillStepped').classList.toggle('active',f==='stepped'); $('fillStepped').setAttribute('aria-pressed',f==='stepped'); paintSurface(); }
+  $('fillSmooth').addEventListener('click',function(){ setFill('smooth'); });
+  $('fillStepped').addEventListener('click',function(){ setFill('stepped'); });
+
+  $('hexSize').addEventListener('input',function(){ opts.hexSize=+this.value; $('hexSizeV').textContent=this.value+' m'; renderHex(); });
+  $('hexCeil').addEventListener('input',function(){ opts.hexCeil=+this.value; $('hexCeilV').textContent=this.value+' / hex'; updateEnds(); renderHex(); });
+
+  function updateEnds(){
+    if(mode==='surface'){ $('endLo').textContent='0'; $('endHi').textContent=opts.maxDensity+' /km\u00b2'; }
+    else{ $('endLo').textContent='1'; $('endHi').textContent=opts.hexCeil+'+'; }
+  }
+  function setMode(m){
+    mode=m; var s=(m==='surface');
+    $('modeSurface').classList.toggle('active',s); $('modeSurface').setAttribute('aria-pressed',s);
+    $('modeHex').classList.toggle('active',!s); $('modeHex').setAttribute('aria-pressed',!s);
+    $('grpSurface').hidden=!s; $('grpHex').hidden=s;
+    $('noteSurface').hidden=!s; $('noteHex').hidden=s;
+    updateEnds(); render();
+  }
+  $('modeSurface').addEventListener('click',function(){ setMode('surface'); });
+  $('modeHex').addEventListener('click',function(){ setMode('hex'); });
+  $('toggle').addEventListener('click',function(){ $('panel').classList.toggle('collapsed'); });
+
+  // ---- demo data (clearly synthetic — replace via the loaders) --------
+  $('demoBtn').addEventListener('click',function(){ loadDemo(); });
+  function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; var t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+  function loadDemo(){
+    var rand=mulberry32(20260817);
+    var clusters=[[42.356,-71.058,80],[42.349,-71.081,70],[42.340,-71.075,45],[42.343,-71.097,40],[42.365,-71.054,55],
+      [42.312,-71.065,22],[42.325,-71.095,25],[42.377,-71.061,18],[42.353,-71.132,20],[42.310,-71.114,16]];
+    var pts=[]; clusters.forEach(function(c){ for(var i=0;i<c[2];i++){ var s=0.004*(0.3+rand()); pts.push([c[0]+(rand()-0.5)*s*2,c[1]+(rand()-0.5)*s*2]); } });
+    for(var j=0;j<120;j++) pts.push([42.29+rand()*0.11,-71.18+rand()*0.16]);
+    points=pts; $('demoBadge').hidden=false; opts.autoFit=true;
+    setBase('Showing '+pts.length+' demo points — not real crossings',true); render();
+  }
+
+  updateEnds(); loadDemo();
+})();
+</script>
+</body>
+</html>
