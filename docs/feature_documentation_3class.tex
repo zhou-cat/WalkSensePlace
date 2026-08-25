@@ -1,0 +1,192 @@
+\documentclass[11pt]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{underscore}      % lets underscores print literally in text / \texttt
+\usepackage[hidelinks]{hyperref}
+\setlist[itemize]{leftmargin=1.4em}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\Fval}[1]{{\small(\,$F\!\approx\!#1$\,)}}
+
+\title{\textbf{Feature Documentation — Merged 3-Class Model (v16)}\\[2pt]
+\large grass / loose / paved}
+\author{WalkSensePlace}
+\date{}
+
+\begin{document}
+\maketitle
+
+Every feature is computed \textbf{per step} (one gait cycle, from one total-pressure peak to the
+next, ${\sim}0.5$–$1.2$\,s at $f_s=62.5$\,Hz). Sensors used: 12 plantar pressure pads, a 3-axis
+accelerometer, and a 3-axis gyroscope (the magnetometer is dead and unused). Steps that span a
+surface change or a \code{transition}/\code{wait} tag are excluded, so each step lies on a single
+surface.
+
+Two conventions appear throughout:
+\begin{itemize}
+  \item \textbf{``norm''\,/\,session-normalised} --- divided by a within-recording scale (e.g.\ that
+  step's mean total pressure) so the value doesn't scale with body weight or how tightly the insole
+  was worn.
+  \item \textbf{amplitude-invariant} --- the metric is a ratio or shape number, unaffected by
+  overall size.
+\end{itemize}
+
+The model uses \textbf{48 features}. The $F$ values are ANOVA class-separation scores on the full
+data (higher $=$ separates grass/loose/paved better). Person-confound features that are computed
+but \textbf{dropped} are listed at the end.
+
+\section*{Notation}
+For one step of length $L$ samples, let $p_t$ be total pressure; $s_{i,t}$ the value of pad $i$
+($i=1,\dots,12$); heel sum $h_t=\sum_{i\in\mathcal H}s_{i,t}$ and forefoot sum
+$f_t=\sum_{i\in\mathcal F}s_{i,t}$ over the heel set $\mathcal H$ and forefoot set $\mathcal F$.
+Accelerometer axes are $a^x_t,a^y_t,a^z_t$ with magnitude
+$\lVert a_t\rVert=\sqrt{(a^x_t)^2+(a^y_t)^2+(a^z_t)^2}$; gyroscope $g^{\{x,y,z\}}_t$ analogously.
+$\bar x=\tfrac1L\sum_t x_t$ is the mean. $\tilde p$ denotes the total-pressure curve resampled to a
+fixed length and divided by its mean (a unit-scale shape). The \emph{flat-foot instant} is
+$t^\star=\arg\min_t \lVert g_t\rVert$ (foot momentarily still), where the accelerometer points along
+gravity.
+
+Several features are \emph{step-to-step} quantities: for a per-step scalar $u^{(k)}$ (step index
+$k$ within a recording+foot sequence), the rolling 3-step standard deviation is
+\begin{equation}
+\operatorname{roll3\_std}(u)^{(k)}=\sqrt{\tfrac{1}{3}\textstyle\sum_{j=k-2}^{k}\bigl(u^{(j)}-\bar u^{(k)}\bigr)^2},
+\qquad \bar u^{(k)}=\tfrac13\textstyle\sum_{j=k-2}^{k}u^{(j)}.
+\label{eq:roll3}
+\end{equation}
+
+\section{Foot-tilt variability (the strongest features)}
+From a ZUPT-gated orientation estimate: at the flat-foot instant $t^\star$ the foot tilt is read
+from the accelerometer on two orthogonal axes,
+\begin{equation}
+\theta_A=\operatorname{atan2}\!\bigl(a^x_{t^\star},\,\sqrt{(a^y_{t^\star})^2+(a^z_{t^\star})^2}\bigr),
+\qquad
+\theta_B=\operatorname{atan2}\!\bigl(a^z_{t^\star},\,\sqrt{(a^x_{t^\star})^2+(a^y_{t^\star})^2}\bigr).
+\end{equation}
+\begin{itemize}
+  \item \code{orient_rest_a_roll3_std} \Fval{1612} and \code{orient_rest_b_roll3_std} \Fval{889}
+  --- the \textbf{step-to-step variability} of resting foot tilt, i.e.\
+  $\operatorname{roll3\_std}(\theta_A)$ and $\operatorname{roll3\_std}(\theta_B)$ via
+  Eq.~\eqref{eq:roll3}. High values mean the foot lands at a different orientation each step --- the
+  signature of uneven/compliant ground. The single most class-differentiable features, and they
+  generalise across people. (The \emph{absolute} tilt $\theta_A,\theta_B$ is a per-person mount
+  offset and is \emph{not} a feature --- only its step-to-step variability is kept.)
+  \item \code{orient_range_a} / \code{orient_range_b} --- the range of foot tilt \emph{within a
+  single stance}, $\max_t\theta_{A,t}-\min_t\theta_{A,t}$: how much the foot rocks while planted.
+\end{itemize}
+
+\section{Accelerometer texture / impact (vibration and hardness)}
+Let $x$ be a step-length signal, detrended, with real-FFT power spectrum $P_k=\lvert X_k\rvert^2$ at
+frequencies $f_k$ ($k=1,\dots,K$). Define the normalised spectrum $\rho_k=P_k/\sum_j P_j$.
+\begin{align}
+\text{spectral centroid} &= \frac{\sum_k f_k P_k}{\sum_k P_k}, &
+\text{HF fraction} &= \frac{\sum_{k:\,f_k\ge 5\,\text{Hz}} P_k}{\sum_k P_k}, \\[2pt]
+\text{spectral entropy} &= \frac{-\sum_k \rho_k\ln\rho_k}{\ln K}, &
+\text{jerk ratio} &= \frac{\operatorname{RMS}(\Delta x)}{\operatorname{RMS}(x-\bar x)}
+ = \frac{\sqrt{\tfrac1{L-1}\sum_t(x_t-x_{t-1})^2}}{\sqrt{\tfrac1L\sum_t(x_t-\bar x)^2}}.
+\end{align}
+\begin{itemize}
+  \item \code{accel_jerk_ratio} \Fval{1205} --- jerk ratio of the vertical axis $a^y$
+  (amplitude-invariant); sharp/jerky strikes on hard ground, damped on compliant.
+  \item \code{accel_hf_frac} \Fval{549} --- HF fraction of $\lVert a_t\rVert$; higher on firm surfaces.
+  \item \code{accel_spec_centroid} \Fval{517} --- spectral centroid of $\lVert a_t\rVert$; shifts up
+  with harder impacts.
+  \item \code{accel_spec_entropy} \Fval{492} --- spectral entropy of $\lVert a_t\rVert$ (tonal vs
+  broadband texture).
+  \item \code{accel_zcr} --- zero-crossing rate of $a^y$,
+  $\ \dfrac{1}{L-1}\sum_{t}\mathbf 1\!\left[\operatorname{sign}(a^y_t-\bar a^y)\neq
+  \operatorname{sign}(a^y_{t-1}-\bar a^y)\right]$.
+  \item \code{accel_mag_strike} --- peak $\lVert a_t\rVert$ in the impact region
+  $\max_{t\le L/3}\lVert a_t\rVert$.
+\end{itemize}
+
+\section{Gyroscope motion (foot rotation \& stability)}
+\begin{itemize}
+  \item \code{gyro_x_std} \Fval{1046} --- standard deviation of the $x$ angular rate over the step,
+  $\ \sigma_{g^x}=\sqrt{\tfrac1L\sum_t (g^x_t-\bar g^x)^2}$: side-to-side foot rotation/wobble.
+  \item \code{gyro_x_strike} / \code{gyro_y_strike} / \code{gyro_z_strike} --- angular rate at the
+  strike instant (rotational ``kick'' at contact).
+  \item \code{gyro_y_std} / \code{gyro_z_std} --- angular-rate std on the other two axes.
+  \item \code{gyro_hf_frac} \Fval{397} --- HF fraction (same formula) of $\lVert g_t\rVert$.
+  \item \code{gyro_mag_strike} --- $\lVert g_t\rVert$ at the strike instant.
+\end{itemize}
+
+\section{Stance timing \& pressure-curve shape}
+On the unit-scale total curve $\tilde p$ (session-normalised shape):
+\begin{itemize}
+  \item \code{stance_duration} \Fval{838} --- loaded time per step,
+  $\#\{t: p_t>\tfrac12\bar p\}$; compliant ground softens/lengthens contact.
+  \item \code{loading_rate} / \code{loading_rate_norm} --- peak rise rate $\max_t \Delta p_t$ (raw
+  and $/$scale); hard loads faster.
+  \item \code{rise_slope} / \code{fall_slope} --- pressure rise and fall slopes.
+  \item \code{slope_asym} --- asymmetry between loading and unloading slopes.
+  \item \code{time_to_peak_frac} --- $\arg\max_t p_t / L$ (timing of peak loading).
+  \item \code{gu_dip_depth} --- mid-stance dip depth of $\tilde p$,
+  $\ 1-\dfrac{\min_{t\in\text{mid}}\tilde p_t}{\max_t \tilde p_t}$; deeper on grass.
+  \item \code{gu_load_first_frac} --- $\sum_{t\le L/2}\tilde p_t\big/\sum_t \tilde p_t$.
+  \item \code{gu_push_peak} --- height of the push-off (second) peak of $\tilde p$.
+  \item \code{gu_load_slope} / \code{gu_unload_slope} --- $\max_t \Delta\tilde p_t$ (loading) and
+  $\min_t \Delta\tilde p_t$ (unloading).
+\end{itemize}
+
+\section{Weight distribution (heel vs forefoot)}
+\begin{itemize}
+  \item \code{heel_fore_ratio} \Fval{372} --- $\bar h/\bar f$ (front-to-back load).
+  \item \code{heel_impulse_norm} \Fval{394} --- $\sum_t h_t/\text{scale}$ (time-under-load at heel).
+  \item \code{heel_skew} / \code{heel_kurt} --- skewness and kurtosis of the heel series,
+  \[
+  \text{skew}=\frac{\tfrac1L\sum_t (h_t-\bar h)^3}{\sigma_h^{3}},\qquad
+  \text{kurt}=\frac{\tfrac1L\sum_t (h_t-\bar h)^4}{\sigma_h^{4}} .
+  \]
+  \item \code{heel_ripple_frac} --- high-frequency ``ripple'' fraction of the heel signal.
+  \item \code{midstance_diff} --- $h_{t^\star}-f_{t^\star}$ at the flat-foot instant.
+  \item \code{gu_fore_early_frac} --- forefoot loading share in early stance,
+  $\sum_{t\le t_0}\tilde f_t/\sum_t\tilde f_t$.
+  \item \code{gu_fore_heel_toff} --- $(\arg\max_t \tilde f_t-\arg\max_t \tilde h_t)/L$.
+\end{itemize}
+
+\section{Pressure-map distribution \& dynamics (across the 12 pads)}
+Treat the 12 pads as a spatial map. Let $v_i$ be a per-pad load (e.g.\ mean over stance, or the
+flat-foot value) and $q_i=v_i/\sum_j v_j$ its normalised share.
+\begin{align}
+\text{spatial entropy} &= \frac{-\sum_{i=1}^{12} q_i\ln q_i}{\ln 12}, &
+\text{participation} &= \frac{1}{12}\cdot\frac{1}{\sum_{i=1}^{12} q_i^{2}} .
+\end{align}
+\begin{itemize}
+  \item \code{gu_spatial_entropy_stance} \Fval{510} and \code{gu_spatial_entropy_ff} --- normalised
+  Shannon entropy of the pad distribution (whole stance / at flat-foot). High $=$ load spread
+  evenly; low $=$ concentrated. Compliant ground conforms and spreads load.
+  \item \code{gu_participation_ff} --- normalised inverse participation ratio (effective fraction of
+  pads bearing load at flat-foot).
+  \item \code{gu_active_sensors} --- $\#\{i: v_i>0.1\max_j v_j\}$ at flat-foot (contact breadth).
+  \item \code{gu_cop_wander} --- mean frame-to-frame change of the normalised map,
+  $\ \tfrac1{L-1}\sum_t\sum_i \lvert Q_{i,t}-Q_{i,t-1}\rvert$ with $Q_{\cdot,t}$ the per-frame
+  normalised map: how much load shifts around the sole.
+  \item \code{gu_press_jitter} --- mean per-pad temporal jitter,
+  $\operatorname{mean}_i \operatorname{std}_t(\Delta^2 s_{i,t})/\text{scale}$.
+  \item \code{stance_duration_roll3_std} / \code{loading_rate_roll3_std} /
+  \code{impact_mag_roll3_std} --- step-to-step variability (Eq.~\eqref{eq:roll3}) of stance
+  duration, loading rate, and impact.
+\end{itemize}
+
+\section*{Dropped (computed but excluded from the model)}
+Removed because cross-user permutation testing showed they act as a \textbf{person fingerprint} and
+\emph{hurt} generalisation to a new person:
+\begin{itemize}
+  \item \textbf{Per-sensor pressure ratios} --- \code{pressure_01_mean_ratio} $\dots$
+  \code{pressure_12_mean_ratio}, plus \code{heel_mean_ratio}, \code{fore_mean_ratio},
+  \code{heel_pmax_ratio}, \code{fore_pmax_ratio}.
+  \item \textbf{Raw magnitudes} --- \code{total_p_mean}, \code{total_pmax}, \code{impact_mag},
+  \code{impact_mag_norm}, \code{heel_impulse} (scale with body weight / donning tightness).
+\end{itemize}
+
+\section*{How to read the model, in one line}
+The features that carry the surface signal --- and survive to a new person --- are
+\textbf{step-to-step foot-tilt variability}, \textbf{accelerometer texture/jerk}, \textbf{gyro
+rotation variability}, \textbf{stance timing}, and \textbf{pressure-map spread}. Together these
+describe \emph{compliance} (soft vs firm) very well, which is why grass-vs-hard is reliable; they
+describe \emph{fine firm-surface texture} weakly, which is why loose-vs-paved remains hard.
+
+\end{document}

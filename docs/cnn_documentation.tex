@@ -1,0 +1,147 @@
+\documentclass[11pt]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{underscore}
+\usepackage[hidelinks]{hyperref}
+\setlist[itemize]{leftmargin=1.4em}
+\newcommand{\code}[1]{\texttt{#1}}
+
+\title{\textbf{CNN Documentation — 1D Temporal CNN on Raw Step Windows}}
+\author{WalkSensePlace}
+\date{}
+
+\begin{document}
+\maketitle
+
+The tree models (XGBoost/RF) use 48 hand-engineered per-step features. The \textbf{1D-CNN does
+not} --- it is fed the raw multichannel waveform of each step and learns its own shape/texture
+detectors. So there is no feature list; instead this covers (1) the input channels, (2) window
+preparation, (3) the architecture and what it learns, and (4) training/evaluation. It applies to
+both notebooks --- only the number of output classes differs (3 for grass/loose/paved, 2 for
+soft/hard).
+
+\section{Inputs --- 9 channels $\times$ 64 time-steps}
+Each step is a $64\times 9$ array: $C=9$ signal channels sampled at $T=64$ time-points across the
+gait cycle.
+\begin{center}
+\begin{tabular}{@{}clll@{}}
+\toprule
+\# & channel & what it is & how derived \\
+\midrule
+1 & \code{heel_sum}    & total heel pressure     & sum of the 2 heel pads (\code{pressure_08}, \code{pressure_11}) \\
+2 & \code{fore_sum}    & total forefoot pressure & sum of the 5 forefoot pads (\code{pressure_02/04/05/06/09}) \\
+3 & \code{total_p}     & total plantar pressure  & sum of all 12 pressure pads \\
+4--6 & \code{accel_x/y/z} & tri-axial acceleration & raw accelerometer, per axis \\
+7--9 & \code{gyro_x/y/z}  & tri-axial angular rate & raw gyroscope, per axis \\
+\bottomrule
+\end{tabular}
+\end{center}
+The magnetometer is dead (all zeros) and unused. The CNN receives the \emph{three pressure
+aggregates} (heel / forefoot / total) rather than all 12 pads individually --- this keeps the input
+compact and focuses it on the front-to-back loading pattern, while the accel/gyro axes provide the
+raw vibration and rotation to find texture in.
+
+\section{Window preparation}
+\begin{itemize}
+  \item \textbf{Step segmentation.} The same \code{find_step_windows} used by the tree pipeline
+  detects gait cycles (heel-strike to heel-strike); each window is one step. Windows shorter than
+  \code{MIN_DP} samples are dropped; the label is the majority surface tag in the window
+  (single-surface steps only).
+  \item \textbf{Resample to fixed length.} Steps vary in duration, so each channel is linearly
+  resampled to exactly $T=64$ points, time-normalising the gait cycle so a fast and a slow step are
+  comparable.
+  \item \textbf{Per-channel z-scoring.} Each channel $c$ of each step is standardised individually,
+  \begin{equation}
+  \tilde x_c[t]=\frac{x_c[t]-\mu_c}{\sigma_c},\qquad
+  \mu_c=\tfrac1T\textstyle\sum_t x_c[t],\quad
+  \sigma_c=\sqrt{\tfrac1T\textstyle\sum_t\bigl(x_c[t]-\mu_c\bigr)^2}.
+  \end{equation}
+  This removes magnitude and keeps \emph{shape} only --- the same session/person invariance as the
+  tree model's normalised features. The CNN sees \emph{how} pressure and motion evolve through the
+  step, not how large they are, so it doesn't key on body weight or insole tightness.
+\end{itemize}
+
+\section{Architecture --- what the network learns}
+The input $\tilde x\in\mathbb{R}^{T\times C}$ is transposed to $C$ channels $\times$ $T$ time and
+passed through a convolutional body then a classifier head.
+
+\paragraph{1D convolution.} A \code{Conv1d} layer with kernel size $K$ maps $C_{\text{in}}$ input
+channels to $C_{\text{out}}$ output channels; each output channel $o$ is a learned temporal filter,
+\begin{equation}
+y_o[t]=b_o+\sum_{c=1}^{C_{\text{in}}}\sum_{k=0}^{K-1} W_{o,c,k}\,\, x_c\!\left[t+k-\lfloor K/2\rfloor\right],
+\end{equation}
+followed by batch normalisation, a $\operatorname{ReLU}(z)=\max(0,z)$ nonlinearity, and (in the
+first two blocks) max-pooling $\;\operatorname{MaxPool}_2(y)[t]=\max\bigl(y[2t],\,y[2t{+}1]\bigr)$,
+which halves the time axis and adds small shift-tolerance.
+
+\paragraph{Body (feature extractor).}
+\begin{itemize}
+  \item \code{Conv1d(9$\to$32, K=7)} $\to$ BatchNorm $\to$ ReLU $\to$ MaxPool$_2$ \; ($64\to32$):
+  32 low-level temporal patterns across all 9 channels (e.g.\ an impact spike, a loading ramp).
+  \item \code{Conv1d(32$\to$64, K=5)} $\to$ BatchNorm $\to$ ReLU $\to$ MaxPool$_2$ \; ($32\to16$):
+  64 mid-level patterns.
+  \item \code{Conv1d(64$\to$64, K=3)} $\to$ BatchNorm $\to$ ReLU: 64 higher-level patterns.
+  \item \textbf{Global average pooling} collapses each filter's response over time to one number,
+  \begin{equation}
+  z_o=\frac{1}{T'}\sum_{t=1}^{T'} h_o[t],\qquad o=1,\dots,64,
+  \end{equation}
+  giving a 64-dimensional learned summary $z$ of the step.
+\end{itemize}
+
+\paragraph{Head (classifier).}
+\begin{equation}
+\hat y=\operatorname{softmax}\!\Bigl(W_2\,\operatorname{ReLU}\!\bigl(W_1\,\operatorname{drop}_{0.3}(z)+b_1\bigr)+b_2\Bigr),
+\qquad \operatorname{softmax}(u)_c=\frac{e^{u_c}}{\sum_{c'} e^{u_{c'}}},
+\end{equation}
+with a second dropout of $0.3$ before the final linear layer. So the CNN's ``features'' are the 64
+learned convolutional filters --- the data-driven analog of the hand-crafted features. Conceptually
+they can capture the same physical things (impact sharpness like \code{accel_jerk_ratio},
+loading-curve shape like \code{gu_dip_depth}, rotational texture like \code{gyro_x_std}), just
+learned as temporal filters rather than computed formulas.
+
+\section{Training \& evaluation}
+\begin{itemize}
+  \item \textbf{Loss.} Weighted cross-entropy over $N$ steps,
+  \begin{equation}
+  \mathcal L=-\frac{1}{N}\sum_{n=1}^{N} w_{y_n}\,\log \hat y_{n,\,y_n},\qquad
+  w_c=\frac{\bar w_c}{\frac1{C}\sum_{c'}\bar w_{c'}},\quad
+  \bar w_c=\Bigl(\tfrac{N}{C\,n_c}\Bigr)^{\gamma},
+  \end{equation}
+  where $n_c$ is the count of class $c$ and $\gamma=\code{CLASS_WEIGHT_STRENGTH}$ is the same
+  minority up-weighting dial used by the trees ($\gamma{=}0$ no weighting, $\gamma{=}1$ fully
+  balanced).
+  \item \textbf{Optimiser.} Adam, learning rate $10^{-3}$, weight decay $10^{-4}$.
+  \item \textbf{Early stopping.} Up to 80 epochs; keep the weights with the best macro-$F_1$ on a
+  \emph{grouped} internal validation split (whole held-out recordings), patience 12. \code{drop_last}
+  avoids a size-1 final batch that would break BatchNorm.
+  \item \textbf{Cross-validation.} \code{StratifiedGroupKFold} grouped by recording/user, identical
+  to the tree models, so out-of-fold scores are directly comparable. Always compare against the
+  \emph{grouped} (not shuffled) XGBoost focus-class $F_1$.
+\end{itemize}
+
+\section{Two honest limitations}
+\begin{enumerate}
+  \item \textbf{It cannot see cross-step features.} Each window is an independent, z-scored step, so
+  the CNN structurally has no access to step-to-step variability --- yet the tree model's single
+  strongest feature is exactly that (\code{orient_rest_a_roll3_std}, the rolling std of foot tilt
+  across consecutive steps). A CNN over single steps cannot reconstruct a quantity defined across
+  steps, so it is missing the most discriminating signal the trees rely on.
+  \item \textbf{Data size.} With a few thousand steps and the minority class in only a handful of
+  recordings, a CNN overfits easily. If its grouped focus-class $F_1$ doesn't beat XGBoost, that is
+  the honest result, not a tuning failure --- and given (1), a tie or slight loss is the expected
+  outcome.
+\end{enumerate}
+
+\section*{One-line reading}
+The CNN learns temporal filters over the raw heel/forefoot/total-pressure and accel/gyro waveforms
+of each step (time-normalised and z-scored, so it reads \emph{shape}) and classifies from a
+global-average summary of those filters. It captures the same compliance/texture information the
+engineered features do, but --- seeing each step in isolation --- it misses the cross-step
+variability that is the merged tree model's strongest cue, which is why the trees remain the model
+to beat.
+
+\end{document}

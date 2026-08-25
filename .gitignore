@@ -1,0 +1,46 @@
+# ── GIS reference data (large, public, re-downloadable — never version) ──
+gis/
+*.shp
+*.shx
+*.dbf
+*.prj
+*.sbn
+*.sbx
+*.cpg
+*.lyr
+LCLU_*
+LANDCOVER_LANDUSE_POLY.*
+sidewalk_inventory.geojson
+open_space.geojson
+osm_surface.geojson
+_lclu_tiles/
+
+# ── Generated map/analysis outputs (regenerable) ──
+walk_maps/
+Charts_Graphs/
+*.png
+track_*.geojson
+*_tagged.geojson
+*_surface.geojson
+*_pred_*.geojson
+summary.csv
+evenness_scores.csv
+evenness_scaler.json
+
+# ── Compiled training frames (rebuilt by the notebook's Section 2) ──
+grass_dry.csv
+loose_dry.csv
+paved_dry.csv
+soft_dry.csv
+hard_dry.csv
+scratch_features_v2.csv
+
+# ── Large raw recordings: uncomment to exclude if they push the repo over quota ──
+#Individual Users/**/*.csv
+#GPS/*.csv
+
+# ── Python / Jupyter cruft ──
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
