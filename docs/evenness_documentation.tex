@@ -1,0 +1,157 @@
+\documentclass[11pt]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{underscore}
+\usepackage[hidelinks]{hyperref}
+\setlist[itemize]{leftmargin=1.4em}
+\newcommand{\code}[1]{\texttt{#1}}
+
+\title{\textbf{Evenness Score --- Unsupervised Per-Step Metric}\\[2pt]
+\large a 0--100 gait-regularity index computed without surface labels}
+\author{WalkSensePlace}
+\date{}
+
+\begin{document}
+\maketitle
+
+The classification models predict a surface \emph{label}. The \textbf{evenness score} is different:
+it assigns each step a continuous value from \textbf{0 (very uneven / rough) to 100 (very even /
+smooth)} using \textbf{no surface labels anywhere}. It is an unsupervised \emph{scoring model} --- a
+robust scale is fitted on a set of recordings, after which any new step can be scored on the same
+0--100 axis. It measures how regular the gait is, within a step and from step to step; surface tags,
+where they exist, are used only to \emph{validate} the score, never to build it.
+
+\section*{Notation}
+For one step (gait cycle) of length $n$ samples at $f_s=62.5$\,Hz: total pressure $p_t$; the 12 pad
+values $s_{i,t}$ ($i=1,\dots,12$); accelerometer $a^{x}_t,a^{y}_t,a^{z}_t$ with magnitude
+$\lVert a_t\rVert$; gyroscope $g^{x}_t,g^{y}_t,g^{z}_t$ (median-centred within the step). The mean
+over the step is $\bar p=\tfrac1n\sum_t p_t$. The \emph{flat-foot instant}
+$t^\star=\arg\min_t \lVert g_t\rVert$ is where the foot is momentarily still and the accelerometer
+points along gravity, giving two tilt axes
+\[
+\theta_A=\operatorname{atan2}\!\bigl(a^x,\sqrt{(a^y)^2+(a^z)^2}\bigr),\qquad
+\theta_B=\operatorname{atan2}\!\bigl(a^z,\sqrt{(a^x)^2+(a^y)^2}\bigr)\quad(\text{degrees}).
+\]
+Steps are detected from peaks of $p_t$; windows shorter than $15$ or longer than $150$ samples are
+skipped. No surface markers are read at any point.
+
+\section{The irregularity features}
+Every feature is oriented so that \textbf{larger $=$ more uneven}. There are two groups.
+
+\subsection{Within-step irregularity (how unsteady a single step is)}
+\begin{itemize}
+  \item \code{orient_range_a}, \code{orient_range_b} --- the range of foot tilt \emph{during} the
+  step (how much the foot rocks while planted):
+  $\ \max_t\theta_{A,t}-\min_t\theta_{A,t}\ $ and likewise for $\theta_B$.
+  \item \code{cop_wander} --- how much the pressure distribution shifts around the sole frame to
+  frame. With the per-frame normalised map $Q_{i,t}=s_{i,t}\big/\sum_{j}s_{j,t}$,
+  \begin{equation}
+  \code{cop\_wander}=\frac{1}{n-1}\sum_{t=2}^{n}\sum_{i=1}^{12}\bigl|\,Q_{i,t}-Q_{i,t-1}\,\bigr|.
+  \end{equation}
+  \item \code{press_jitter} --- small pressure fluctuations, as the mean over pads of the standard
+  deviation of the per-pad second difference, session-normalised:
+  \begin{equation}
+  \code{press\_jitter}=\frac{1}{12\,\bar p}\sum_{i=1}^{12}\operatorname{std}_t\!\bigl(\Delta^2 s_{i,t}\bigr),
+  \qquad \Delta^2 s_{i,t}=s_{i,t}-2s_{i,t-1}+s_{i,t-2}.
+  \end{equation}
+  \item \code{gyro_std} --- rotational wobble, the mean over axes of the angular-rate standard
+  deviation: $\ \tfrac13\sum_{c\in\{x,y,z\}}\operatorname{std}_t\!\bigl(g^{c}_t\bigr)$.
+\end{itemize}
+
+\subsection{Step-to-step consistency (how much a step differs from its neighbours)}
+For each of the following per-step scalars we take the \textbf{rolling 3-step standard deviation}
+within a recording+foot sequence; for a per-step scalar $u^{(k)}$ (step index $k$),
+\begin{equation}
+\operatorname{roll3\_std}(u)^{(k)}=\sqrt{\tfrac{1}{3}\textstyle\sum_{j=k-2}^{k}\bigl(u^{(j)}-\bar u^{(k)}\bigr)^2},
+\qquad \bar u^{(k)}=\tfrac13\textstyle\sum_{j=k-2}^{k}u^{(j)}.
+\label{eq:roll3}
+\end{equation}
+The scalars are:
+\begin{itemize}
+  \item \code{stance_dur} --- loaded fraction of the step, $\tfrac1n\#\{t: p_t>\tfrac12\bar p\}$.
+  \item \code{loading_rate} --- normalised peak rise rate, $\max_t(\Delta p_t)/\bar p$.
+  \item \code{impact} --- $\max_{t\le n/3}\lVert a_t\rVert \big/ \operatorname{median}_t\lVert a_t\rVert$.
+  \item \code{tiltA}, \code{tiltB} --- the flat-foot tilt $\theta_A,\theta_B$ at $t^\star$.
+\end{itemize}
+Applying Eq.~\eqref{eq:roll3} gives \code{stance_dur_roll3_std}, \code{loading_rate_roll3_std},
+\code{impact_roll3_std}, \code{tiltA_roll3_std}, \code{tiltB_roll3_std}. A high value means the
+quantity jumps around from step to step --- the hallmark of walking on irregular ground.
+
+\medskip
+\noindent The full set is the $F=10$ features
+$\{$\code{orient_range_a}, \code{orient_range_b}, \code{cop_wander}, \code{press_jitter},
+\code{gyro_std}$\}$ (within-step) plus the five \code{*_roll3_std} (step-to-step).
+
+\section{From features to a 0--100 score}
+
+\paragraph{Robust standardisation.} Each feature is standardised by its \emph{median} and
+\emph{interquartile range} (IQR $=Q_{75}-Q_{25}$), which resist outliers far better than mean/std,
+and clipped so no single step dominates:
+\begin{equation}
+z_f = \operatorname{clip}\!\left(\frac{x_f-m_f}{s_f},\,-4,\,4\right),
+\qquad m_f=\operatorname{median}(x_f),\quad s_f=\operatorname{IQR}(x_f).
+\end{equation}
+
+\paragraph{Unevenness index.} The standardised features are averaged with equal weight into a single
+\emph{unevenness index} (higher $=$ rougher):
+\begin{equation}
+U=\frac{1}{F}\sum_{f=1}^{F} z_f .
+\end{equation}
+Equal weighting keeps the score transparent --- any step's value can be traced back to which
+features pushed it up or down --- and, because every feature is an independent irregularity
+measure pointing the same way, they reinforce rather than cancel.
+
+\paragraph{Calibration to 0--100.} $U$ is itself robustly standardised and passed through the
+standard-normal CDF $\Phi$, then scaled, so the result is bounded, calibrated, and transferable:
+\begin{equation}
+\boxed{\ \code{evenness}=100\cdot\Phi\!\left(-\,\frac{U-m_U}{s_U}\right),\ \ \text{clipped to }[0,100].\ }
+\end{equation}
+The minus sign flips rough$\to$smooth so that \textbf{higher $=$ more even}. A step at the median
+unevenness scores $50$; a step two (robust) standard deviations smoother scores $\approx 98$, and one
+two deviations rougher $\approx 2$. So $50$ is ``a typical step,'' and the score reads directly as a
+percentile-like position on the smoothness axis.
+
+\section{The fitted model}
+Fitting stores only the calibration constants:
+\[
+\bigl\{\,m_f,\,s_f\ \text{for each feature}\,\bigr\}\ \cup\ \bigl\{\,m_U,\,s_U\,\bigr\},
+\]
+saved as \code{evenness_scaler.json}. Scoring a \emph{new} recording re-uses these exact constants:
+extract the 10 features per step, apply the stored $m_f,s_f$, average to $U$, apply the stored
+$m_U,s_U$ and $\Phi$. Because the reference numbers are fixed at fit time, scores are comparable
+across recordings and walks --- ``$50$'' always means the same thing (the median step of the fitting
+set), not ``the median step of whatever file this happens to be.''
+
+\section{What the score measures (validation)}
+Although no labels are used to build it, grouping the score by surface (where tags exist) shows it
+lands exactly where physical intuition says it should:
+\begin{center}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+surface & mean evenness & interpretation \\
+\midrule
+grass & ${\approx}\,40$ & compliant, irregular --- \emph{least even} \\
+loose & ${\approx}\,51$--$55$ & firm, fairly regular \\
+paved & ${\approx}\,51$--$52$ & firm, regular \\
+\bottomrule
+\end{tabular}
+\end{center}
+Two things follow. First, the score \textbf{recovers the compliance axis unsupervised}: grass
+(soft, uneven) is cleanly separated below the firm surfaces, with no target ever supplied. Second,
+it is \textbf{not} a paved-vs-loose discriminator --- those score almost identically, which is
+honest: a smooth compact-dirt path really is about as regular to walk on as pavement, so a
+\emph{gait-regularity} metric should not, and does not, tell them apart. Evenness measures how
+steady the walking is, which is the soft-vs-firm distinction, not surface material \emph{per se}.
+
+\section*{One-line reading}
+Evenness is an equal-weight, robustly-standardised composite of ten within-step and step-to-step
+irregularity features, calibrated through the normal CDF to a transferable 0--100 scale
+($50=$ typical step, higher $=$ smoother). With no labels, it reproduces the compliance axis ---
+grass scores distinctly low, firm surfaces high --- making it a label-free companion to the
+supervised soft-vs-hard model rather than a replacement for it.
+
+\end{document}
