@@ -3,12 +3,13 @@ predict_walks.py — per-walk step-by-step lines for the maps, time-matched to e
     <stem>_pred_3class.geojson   grass/loose/paved   (3-class model)      [categorical]
     <stem>_pred_2class.geojson   soft/hard           (2-class model)      [categorical]
     <stem>_hardness.geojson      P(firm)x100         (notebook cell-38)   [continuous 0-100]
-    <stem>_evenness.geojson      irregularity score  (notebook cell-38)   [continuous 0-100]
+    <stem>_evenness.geojson      evenness 0-100 (standalone unsupervised model / evenness_scaler.json)
 build_all_walks.py draws these automatically (gradients for hardness/evenness).
 
 Hardness = supervised P(firm): logistic regression on compliance features, the SAME method as
-the model notebooks' hardness/evenness cell. Evenness = the notebook's EVEN_NEG -z composite,
-percentile-calibrated against the training set. Both reuse the notebook's exact feature extractor.
+the model notebooks' hardness/evenness cell. Evenness comes from the standalone unsupervised
+scoring model (focused extractor + robust median/IQR + normal-CDF calibration); it loads
+evenness_scaler.json if present, else fits the same scaler on the training recordings.
 
 Usage:
     pip install xgboost scikit-learn scipy pandas numpy gpxpy
@@ -27,6 +28,89 @@ COMPL_FEATS = ['accel_jerk_ratio','accel_hf_frac','accel_spec_centroid','accel_z
                'gyro_hf_frac','gu_stance_frac','stance_duration','loading_rate_norm']
 EVEN_NEG_FEATS = ['orient_range_a','orient_range_b','gu_cop_wander','gu_press_jitter',
                   'orient_rest_a_roll3_std','orient_rest_b_roll3_std','gyro_x_std']
+
+# ---- standalone unsupervised EVENNESS model (matches evenness_score_unsupervised.ipynb) ----
+from scipy.signal import find_peaks
+from scipy.stats import norm
+EV_FS=62.5; EV_MIN,EV_MAX=15,150
+EV_SENSORS=[f'pressure_{i:02d}' for i in range(1,13)]
+EV_WITHIN=['orient_range_a','orient_range_b','cop_wander','press_jitter','gyro_std']
+EV_STEP=['stance_dur','loading_rate','impact','tiltA','tiltB']
+EV_FEATS=EV_WITHIN+[f'{c}_roll3_std' for c in EV_STEP]
+
+def ev_find_steps(tot):
+    mx=np.nanmax(tot) if np.nanmax(tot)>0 else 1.0
+    pk,_=find_peaks(tot,distance=25,prominence=mx*0.15); return pk
+
+def ev_extract_sole(df,foot):
+    df=df.reset_index(drop=True)
+    if len(df)<EV_MIN: return pd.DataFrame()
+    P=df[EV_SENSORS].apply(pd.to_numeric,errors='coerce').fillna(0).values; tot=P.sum(1)
+    ax=pd.to_numeric(df['accel_x'],errors='coerce').fillna(0).values
+    ay=pd.to_numeric(df['accel_y'],errors='coerce').fillna(0).values
+    az=pd.to_numeric(df['accel_z'],errors='coerce').fillna(0).values
+    G=df[['gyro_x','gyro_y','gyro_z']].apply(pd.to_numeric,errors='coerce').fillna(0).values; Gc=G-np.median(G,0)
+    amag=np.sqrt(ax**2+ay**2+az**2); gmag=np.sqrt((Gc**2).sum(1))
+    tA=np.degrees(np.arctan2(ax,np.hypot(ay,az))); tB=np.degrees(np.arctan2(az,np.hypot(ax,ay)))
+    ts=pd.to_numeric(df['timestamp'],errors='coerce').values if 'timestamp' in df.columns else np.arange(len(df))
+    pk=ev_find_steps(tot); rows=[]; o=0
+    for i in range(len(pk)-1):
+        a,b=pk[i],pk[i+1]; n=b-a
+        if n<EV_MIN or n>EV_MAX: continue
+        Pw=P[a:b]; totw=tot[a:b]; sc=totw.mean()+1e-9; wam=amag[a:b]; wgm=gmag[a:b]
+        Qn=Pw/(Pw.sum(1,keepdims=True)+1e-9); t=int(np.argmin(wgm))
+        rows.append(dict(foot=foot,order=o,t_ms=float(ts[(a+b)//2]),
+            orient_range_a=float(tA[a:b].max()-tA[a:b].min()), orient_range_b=float(tB[a:b].max()-tB[a:b].min()),
+            cop_wander=float(np.mean(np.abs(np.diff(Qn,axis=0)).sum(1))) if n>1 else 0.0,
+            press_jitter=float(np.mean(np.std(np.diff(Pw,n=2,axis=0),axis=0))/sc) if n>2 else 0.0,
+            gyro_std=float(np.mean([np.std(Gc[a:b,k]) for k in range(3)])),
+            stance_dur=float((totw>0.5*sc).mean()), loading_rate=float(np.max(np.diff(totw))/sc),
+            impact=float(wam[:max(1,n//3)].max()/(np.median(wam)+1e-9)), tiltA=float(tA[a:b][t]), tiltB=float(tB[a:b][t]))); o+=1
+    return pd.DataFrame(rows)
+
+def ev_extract(csv_path):
+    raw=pd.read_csv(csv_path,low_memory=False)
+    if 'sole_id' not in raw.columns: return pd.DataFrame()
+    parts=[]
+    for sole in raw['sole_id'].dropna().unique():
+        foot='right' if str(sole) in ('1','1.0') else 'left' if str(sole) in ('2','2.0') else f'sole{sole}'
+        st=ev_extract_sole(raw[raw['sole_id']==sole],foot)
+        if len(st): parts.append(st)
+    if not parts: return pd.DataFrame()
+    S=pd.concat(parts,ignore_index=True).sort_values(['foot','order'])
+    for c in EV_STEP:
+        S[f'{c}_roll3_std']=S.groupby('foot')[c].transform(lambda x:x.rolling(3,min_periods=1).std().fillna(0))
+    return S
+
+def _robust_cs(x):
+    m=float(np.median(x)); q=float(np.subtract(*np.percentile(x,[75,25])))
+    return m,(q if q>0 else (float(np.std(x)) or 1.0))
+
+def fit_even_scaler(df):
+    cs={c:list(_robust_cs(df[c].values)) for c in EV_FEATS if c in df.columns}
+    Z=np.column_stack([np.clip((df[c].values-cs[c][0])/(cs[c][1]+1e-9),-4,4) for c in cs]); U=Z.mean(1)
+    um,us=_robust_cs(U); return {'features':list(cs.keys()),'feat_center_scale':cs,'U_center':um,'U_scale':us}
+
+def apply_even_scaler(df,scaler):
+    feats=scaler['features']; cs=scaler['feat_center_scale']
+    for c in feats:
+        if c not in df: df[c]=0.0
+    Z=np.column_stack([np.clip((df[c].values-cs[c][0])/(cs[c][1]+1e-9),-4,4) for c in feats]); U=Z.mean(1)
+    return np.clip(100*norm.cdf(-(U-scaler['U_center'])/(scaler['U_scale']+1e-9)),0,100)
+
+def find_even_scaler(explicit, train_dir, walks_dir):
+    cands=[explicit] if explicit else []
+    for d in [train_dir, walks_dir]:
+        cands += [os.path.join(d,'..','Charts_Graphs','evenness_scaler.json'),
+                  os.path.join(d,'Charts_Graphs','evenness_scaler.json'),
+                  os.path.join(d,'evenness_scaler.json')]
+    for d in [train_dir, walks_dir]:
+        cands += glob.glob(os.path.join(d,'..','**','evenness_scaler.json'), recursive=True)
+    for c in cands:
+        if c and os.path.exists(c):
+            try: return json.load(open(c, encoding='utf-8')), c
+            except Exception: pass
+    return None, None
 
 def load_extractor(nb_path):
     nb = json.load(open(nb_path, encoding='utf-8')); S = lambda c: ''.join(c['source'])
@@ -144,6 +228,7 @@ def main():
     ap=argparse.ArgumentParser()
     ap.add_argument('--notebook',required=True); ap.add_argument('--train-dir',required=True)
     ap.add_argument('--walks-dir',default='.'); ap.add_argument('--pred-dir',default=None); ap.add_argument('--out',default=None)
+    ap.add_argument('--evenness-scaler',default=None,help='path to evenness_scaler.json (else auto-find, else fit on training)')
     a=ap.parse_args(); a.out=a.out or os.path.join(a.walks_dir,'walk_maps'); os.makedirs(a.out,exist_ok=True)
 
     print("loading extractor ..."); ns=load_extractor(a.notebook)
@@ -156,12 +241,21 @@ def main():
     # --- notebook cell-38 hardness = P(firm) + evenness = EVEN_NEG composite ---
     from sklearn.linear_model import LogisticRegression
     from sklearn.preprocessing import StandardScaler; from sklearn.pipeline import Pipeline
-    COMPL=[c for c in COMPL_FEATS if c in full.columns]; EVEN=[c for c in EVEN_NEG_FEATS if c in full.columns]
+    COMPL=[c for c in COMPL_FEATS if c in full.columns]
     hard_y=(~full['surface'].isin(SOFT)).astype(int).values
     hard_pipe=Pipeline([('s',StandardScaler()),('lr',LogisticRegression(max_iter=1000,class_weight='balanced'))]).fit(full[COMPL].fillna(0).values,hard_y)
-    emean=full[EVEN].mean(); estd=full[EVEN].std().replace(0,1)
-    comp_tr=np.sort((-((full[EVEN]-emean)/estd).clip(-4,4)).mean(1).values)
-    print("training hardness P(firm) + evenness scale ... (notebook method)")
+    print("training hardness P(firm) [notebook method] ...")
+
+    # evenness = standalone unsupervised model: load evenness_scaler.json, else fit the same scaler on training
+    even_scaler,src=find_even_scaler(a.evenness_scaler,a.train_dir,a.walks_dir)
+    if even_scaler:
+        print(f"evenness: using scaler from {src}")
+    else:
+        print("evenness: no scaler found -> fitting unsupervised scaler on training recordings ...")
+        ev_tr=[ev_extract(f) for f in find_recordings(a.train_dir)]
+        ev_tr=pd.concat([d for d in ev_tr if len(d)],ignore_index=True) if any(len(d) for d in ev_tr) else pd.DataFrame()
+        if not len(ev_tr): sys.exit("could not build evenness training features")
+        even_scaler=fit_even_scaler(ev_tr)
 
     def lab(pdf,m,le,feats):
         for c in feats:
@@ -171,11 +265,6 @@ def main():
         for c in COMPL:
             if c not in pdf: pdf[c]=0.0
         return hard_pipe.predict_proba(pdf[COMPL].fillna(0).values)[:,1]*100
-    def even(pdf):
-        for c in EVEN:
-            if c not in pdf: pdf[c]=0.0
-        comp=(-((pdf[EVEN]-emean)/estd).clip(-4,4)).mean(1).values
-        return np.searchsorted(comp_tr,comp)/max(1,len(comp_tr))*100
 
     for gpx in sorted(glob.glob(os.path.join(a.walks_dir,'*.gpx'))):
         stem=os.path.splitext(os.path.basename(gpx))[0]; pts=parse_gpx(gpx)
@@ -197,7 +286,14 @@ def main():
         write(lab(pdf,m3,le3,f3),'pred_3class','surface','unknown')
         write(lab(pdf,m2,le2,f2),'pred_2class','surface','unknown')
         write(hard(pdf),'hardness','value',float('nan'))
-        write(even(pdf),'evenness','value',float('nan'))
+        # evenness: standalone unsupervised model on this walk's recording (own step segmentation)
+        evdf=ev_extract(rec)
+        if len(evdf):
+            ev_vals=apply_even_scaler(evdf,even_scaler); ev_t=pd.to_numeric(evdf['t_ms'],errors='coerce').values
+            evm=match_to_track(pts,list(zip(ev_t,ev_vals)),fill=float('nan'))
+            json.dump(seg_fc(pts,evm,'value'),open(os.path.join(a.out,f"{stem}_evenness.geojson"),'w'))
+        else:
+            print(f"[warn] {stem}: 0 evenness steps")
         print(f"[ok] {stem}: {len(pdf)} steps -> pred_3class, pred_2class, hardness, evenness")
     print(f"\nDone -> geojsons in '{a.out}'. Run build_all_walks.py to draw the lines.")
 
