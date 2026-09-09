@@ -42,6 +42,7 @@ COLORS = {'paved':'#607D8B','grass':'#4CAF50','loose':'#8D6E63','unknown':'#BDBD
 STADIA_KEY='377f7e02-33d0-4f45-bd6e-c273fe50c30e'
 THUNDERFOREST_KEY='dfbe54f393a8417eb1885a4325a50078'
 CARTO_KEY='cb1_3238_1_e3bcdd0ae0b1c1c1f456bab2'
+JAWG_KEY='m0NJ4fOCJMyn5H2R4v6HFmZYftLbtXauPhf6xlOOF0o9uJCFMMNvBiR6dp1PHJDb'
 
 def sw_class(v):
     if v is None: return 'unknown'
@@ -214,46 +215,41 @@ const map=L.map('map',{renderer:L.svg({padding:0.6}),preferCanvas:false});
 const ESRI='Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ, USGS, and the GIS community';
 function esri(svc,nz){return L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/'+svc+'/MapServer/tile/{z}/{y}/{x}',{attribution:ESRI,maxZoom:19,maxNativeZoom:nz||19});}
 const BASEMAPS={
- 'Esri Streets':            esri('World_Street_Map',19),
- 'Esri Topographic':        esri('World_Topo_Map',19),
- 'Esri Imagery (satellite)':esri('World_Imagery',19),
- 'Esri Imagery Clarity':    esri('World_Imagery',19),
- 'Esri Light Gray':         esri('Canvas/World_Light_Gray_Base',16),   // upscales past z16
- 'Esri Dark Gray':          esri('Canvas/World_Dark_Gray_Base',16),
- 'OpenStreetMap':           L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; OpenStreetMap',maxZoom:19}),
- 'OSM Humanitarian':        L.tileLayer('https://tile-{s}.openstreetmap.fr/hot/{z}/{x}/{y}.png',{subdomains:'ab',attribution:'&copy; OpenStreetMap, HOT',maxZoom:19}),
- 'OpenTopoMap':             L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{subdomains:'ab',attribution:'&copy; OpenTopoMap (CC-BY-SA)',maxZoom:19,maxNativeZoom:17})
+ 'Esri World Topo':    esri('World_Topo_Map',19),
+ 'Esri World Imagery': esri('World_Imagery',19)
 };
-// ---- optional key-gated basemaps (only appear if a key was provided) ----
-const STADIA_KEY="__STADIA_KEY__", TF_KEY="__TF_KEY__", CARTO_KEY="__CARTO_KEY__";
+// ---- key-gated basemaps: appear only when their key is set (edit consts or set env vars) ----
+const STADIA_KEY="__STADIA_KEY__", TF_KEY="__TF_KEY__", CARTO_KEY="__CARTO_KEY__", JAWG_KEY="__JAWG_KEY__";
 if(STADIA_KEY){
   const sd=(style,ext)=>L.tileLayer(`https://tiles.stadiamaps.com/tiles/${style}/{z}/{x}/{y}.${ext||'png'}?api_key=${STADIA_KEY}`,
     {attribution:'&copy; Stadia Maps &copy; Stamen &copy; OpenMapTiles &copy; OpenStreetMap',maxZoom:20});
-  BASEMAPS['Stamen Watercolor']=sd('stamen_watercolor','jpg');
-  BASEMAPS['Stamen Toner']=sd('stamen_toner');
-  BASEMAPS['Stamen Terrain']=sd('stamen_terrain');
-  BASEMAPS['Stadia Alidade Smooth']=sd('alidade_smooth');
-  BASEMAPS['Stadia Alidade Dark']=sd('alidade_smooth_dark');
   BASEMAPS['Stadia OSM Bright']=sd('osm_bright');
   BASEMAPS['Stadia Outdoors']=sd('outdoors');
+  BASEMAPS['Stamen Terrain']=sd('stamen_terrain');
 }
 if(TF_KEY){
-  const tf=(style,mz)=>L.tileLayer(`https://tile.thunderforest.com/${style}/{z}/{x}/{y}.png?apikey=${TF_KEY}`,
-    {attribution:'&copy; Thunderforest &copy; OpenStreetMap contributors',maxZoom:mz||22});
-  BASEMAPS['Thunderforest Outdoors']=tf('outdoors');
-  BASEMAPS['Thunderforest Landscape']=tf('landscape');
-  BASEMAPS['Thunderforest OpenCycleMap']=tf('cycle');
-  BASEMAPS['Thunderforest Transport']=tf('transport');
-  BASEMAPS['Thunderforest Atlas']=tf('atlas');
+  const tf=(variant)=>L.tileLayer(`https://{s}.tile.thunderforest.com/${variant}/{z}/{x}/{y}.png?apikey=${TF_KEY}`,
+    {subdomains:'abc',attribution:'&copy; Thunderforest &copy; OpenStreetMap contributors',maxZoom:22});
+  BASEMAPS['TF OpenCycleMap']=tf('cycle');
+  BASEMAPS['TF Transport']=tf('transport');
+  BASEMAPS['TF Landscape']=tf('landscape');
+  BASEMAPS['TF Outdoors']=tf('outdoors');
+  BASEMAPS['TF Mobile Atlas']=tf('mobile-atlas');
+  BASEMAPS['TF Neighbourhood']=tf('neighbourhood');
+  BASEMAPS['TF Atlas']=tf('atlas');
+}
+if(JAWG_KEY){
+  const jw=(variant)=>L.tileLayer(`https://tile.jawg.io/${variant}/{z}/{x}/{y}.png?access-token=${JAWG_KEY}`,
+    {attribution:'&copy; Jawg Maps &copy; OpenStreetMap contributors',maxZoom:22});
+  BASEMAPS['Jawg Terrain']=jw('jawg-terrain');
+  BASEMAPS['Jawg Streets']=jw('jawg-streets');
 }
 if(CARTO_KEY){
   const ct=(style)=>L.tileLayer(`https://basemaps.cartocdn.com/${style}/{z}/{x}/{y}.png?key=${CARTO_KEY}`,
     {attribution:'&copy; OpenStreetMap contributors, &copy; CARTO',maxZoom:20});
-  BASEMAPS['CARTO Positron (light)']=ct('light_all');
-  BASEMAPS['CARTO Dark Matter']=ct('dark_all');
   BASEMAPS['CARTO Voyager']=ct('rastertiles/voyager');
 }
-BASEMAPS['Esri Streets'].addTo(map);   // default
+BASEMAPS['Esri World Topo'].addTo(map);   // default
 L.control.layers(BASEMAPS,null,{position:'bottomleft',collapsed:true}).addTo(map);
 
 // ---- geometry (from truth layer as the reference path) ----
@@ -396,7 +392,7 @@ refreshAll(); window.addEventListener('resize',buildTimeline);
 def build_html(name, layers, agree):
     payload=[{'name':nm,'key':key,'fc':fc,'mode':mode,'ramp':ramp,'role':role} for (nm,fc,key,mode,ramp,role) in layers]
     return (HTML.replace('__NAME__',name).replace('__AGREE__',agree).replace('__LAYERS__',json.dumps(payload))
-            .replace('__STADIA_KEY__',STADIA_KEY).replace('__TF_KEY__',THUNDERFOREST_KEY).replace('__CARTO_KEY__',CARTO_KEY))
+            .replace('__STADIA_KEY__',STADIA_KEY).replace('__TF_KEY__',THUNDERFOREST_KEY).replace('__CARTO_KEY__',CARTO_KEY).replace('__JAWG_KEY__',JAWG_KEY))
 
 def main():
     ap=argparse.ArgumentParser()
