@@ -1,0 +1,170 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{booktabs}
+\usepackage[table]{xcolor}
+\usepackage{amsmath}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage[hidelinks]{hyperref}
+\setlist[itemize]{leftmargin=1.4em,itemsep=2pt,topsep=3pt}
+\titleformat{\section}{\large\bfseries}{\thesection.}{0.5em}{}
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{0.5em}{}
+\newcommand{\cls}[1]{\textbf{#1}}
+\title{\vspace{-1.5em}Feature documentation --- \textbf{4-class} ground-condition model\\[2pt]
+\large continuous\_paved / modular\_paved / loose / grass}
+\author{GroundWalks (WalkSensePlace)}
+\date{}
+\begin{document}
+\maketitle
+\vspace{-2em}
+
+Every feature is computed \textbf{per step} (one gait cycle, from one total-pressure peak to the
+next, $\sim$0.5--1.2\,s at 62.5\,Hz). Sensors used: 12 plantar pressure pads, a 3-axis
+accelerometer, and a 3-axis gyroscope (the magnetometer is dead --- all zeros --- so it is
+unused). Steps that span a surface change or a \texttt{transition}/\texttt{wait} tag are
+excluded, so each step lies on a single surface.
+
+Two conventions appear throughout:
+\begin{itemize}
+\item \textbf{``norm'' / session-normalised} --- divided by a within-recording scale (e.g.\ that
+  step's mean total pressure) so the value doesn't scale with body weight or how tightly the
+  insole was worn.
+\item \textbf{amplitude-invariant} --- the metric is a \emph{ratio} or \emph{shape} number,
+  unaffected by overall size.
+\end{itemize}
+
+The model uses \textbf{48 features} (a cross-user pruned subset of 30 gives equivalent grouped
+performance --- see \S8). The person-confound features the pipeline computes but \textbf{drops}
+from the model are listed in \S7. The ``F'' values are the ANOVA class-separation scores
+\emph{on the 4-class data} --- higher means the feature better separates the four classes.
+
+\section{The 4-class scheme (what changed from 3-class)}
+This model extends the merged 3-class model (grass / loose / paved) by \textbf{splitting paved}
+along an \emph{evenness} axis:
+\begin{itemize}
+\item \cls{continuous\_paved} --- concrete, asphalt, brick, exposed aggregate: smooth, continuous
+  rigid surfaces.
+\item \cls{modular\_paved} --- cobblestone and uneven / loose-jointed brick: rigid like concrete
+  but \emph{bumpy and segmented}. This is the \textbf{new class}.
+\item \cls{loose} --- dirt, compact ground, gravel, sand.
+\item \cls{grass}.
+\end{itemize}
+Crucially, continuous-vs-modular is \emph{not} a material distinction (both are hard, and the
+sensor is weak at material). It rides on the \textbf{regularity / micro-vibration} signal --- the
+step-to-step foot-tilt variability, jerk, and spectral texture features below --- which is the
+axis the sensor genuinely responds to. Cobblestone is hard \emph{and} uneven, so it should sit
+between smooth pavement and the softer classes on both the hardness and evenness scales; the
+per-surface scale positions (\S9) confirm this.
+
+\begin{center}
+\rowcolors{2}{gray!8}{white}
+\begin{tabular}{lcc}
+\toprule
+\textbf{surface} & \textbf{hardness (0--100)} & \textbf{evenness (0--100)}\\
+\midrule
+continuous\_paved & 64.4 & 55.7\\
+modular\_paved    & 56.6 & 50.7\\
+loose            & 53.2 & 54.4\\
+grass            & 38.7 & 33.8\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent\textbf{Data-status caveat.} As of this run, \cls{modular\_paved} has only $\sim$215
+steps from \textbf{3 recordings}, versus 8055 steps / 37 recordings for continuous\_paved.
+Under grouped cross-validation (unseen recordings) modular\_paved F1 is $\sim$18\%, and its errors
+scatter mostly into continuous\_paved (both hard). The \emph{features} are the right ones --- the
+top separators are the evenness/vibration features --- but the class is \textbf{data-starved, not
+mis-modelled}. The reliable fix is more cobblestone recordings from more people; until then, read
+the \emph{grouped} modular\_paved score (not the in-sample one) and expect it to be noisy.
+
+\section{Foot-tilt variability (the strongest features)}
+From a ZUPT-gated orientation estimate: within each step, the instant of minimum gyro magnitude
+(foot flat and momentarily still) is found, and the foot's tilt there is read from the
+accelerometer (which then points along gravity). Two orthogonal tilt axes, A and B, are tracked.
+\begin{itemize}
+\item \texttt{orient\_rest\_a\_roll3\_std} (F$\approx$1450) --- and \texttt{orient\_rest\_b\_roll3\_std} (F$\approx$668) --- the \textbf{step-to-step variability} of resting foot tilt (rolling 3-step std of flat-foot tilt within each recording+foot sequence). High values mean the foot lands at a \emph{different} orientation each step --- the signature of an uneven surface, and exactly the cue that separates modular from continuous paved. These are the single most class-differentiable features and generalise across people. The absolute resting tilt is computed but \textbf{not} used (per-person mount offset); only its variability is kept.
+\item \texttt{orient\_range\_a} (F$\approx$74) --- and \texttt{orient\_range\_b} --- the range (max$-$min) of foot tilt \emph{during a single stance} on each axis: how much the foot rocks while planted. A within-step complement to the step-to-step variability above.
+\end{itemize}
+
+\section{Accelerometer texture / impact (vibration and hardness)}
+Computed on the within-step accelerometer signal. Spectral features run an FFT on the detrended
+signal; jerk/zcr run on vertical (accel-Y). These carry most of the continuous-vs-modular signal.
+\begin{itemize}
+\item \texttt{accel\_jerk\_ratio} (F$\approx$751) --- RMS of the first difference of vertical acceleration $\div$ RMS of the signal (amplitude-invariant). How ``jerky''/high-frequency the strike is --- cobblestone transmits sharper, more irregular vibration than smooth pavement.
+\item \texttt{accel\_hf\_frac} (F$\approx$238) --- fraction of accelerometer spectral power above 5\,Hz. Higher on firm/rigid, textured surfaces.
+\item \texttt{accel\_spec\_centroid} (F$\approx$252) --- spectral centroid (centre-of-mass frequency) of the accelerometer power spectrum. Shifts up with harder, higher-frequency impacts.
+\item \texttt{accel\_spec\_entropy} (F$\approx$218) --- normalised Shannon entropy of the accelerometer spectrum: tonal/peaky (low) vs broadband (high). A texture descriptor.
+\item \texttt{accel\_zcr} (F$\approx$240) --- zero-crossing rate of vertical acceleration: a simple roughness/oscillation measure.
+\item \texttt{accel\_mag\_strike} (F$\approx$67) --- peak accelerometer magnitude in the impact region (first third of the step): strike intensity.
+\end{itemize}
+
+\section{Gyroscope motion (foot rotation \& stability)}
+\begin{itemize}
+\item \texttt{gyro\_x\_std} (F$\approx$596) --- standard deviation of X-axis angular rate during the step: side-to-side foot rotation/wobble through stance. A strong discriminator.
+\item \texttt{gyro\_x\_strike} (F$\approx$276) --- and \texttt{gyro\_y\_strike} (F$\approx$109), \texttt{gyro\_z\_strike} (F$\approx$80) --- angular rate on each axis at the strike instant: the rotational ``kick'' at contact.
+\item \texttt{gyro\_z\_std} (F$\approx$243) --- and \texttt{gyro\_y\_std} --- angular-rate variability on the other two axes.
+\item \texttt{gyro\_hf\_frac} (F$\approx$192) --- fraction of gyroscope spectral power above 5\,Hz (rotational high-frequency content, analogous to \texttt{accel\_hf\_frac}).
+\item \texttt{gyro\_mag\_strike} (F$\approx$195) --- gyro magnitude at the strike instant.
+\end{itemize}
+
+\section{Stance timing \& pressure-curve shape}
+From the total-pressure curve over the step, mostly session-normalised so they describe
+\emph{shape} not size.
+\begin{itemize}
+\item \texttt{stance\_duration} (F$\approx$349) --- time (samples) the foot is loaded. Compliant ground lengthens/softens contact.
+\item \texttt{loading\_rate\_norm} (F$\approx$61) --- and \texttt{loading\_rate} --- how fast pressure rises to peak (session-normalised and raw). Hard surfaces load faster.
+\item \texttt{rise\_slope}, \texttt{fall\_slope}, \texttt{slope\_asym} --- slopes of the pressure rise and fall, and their asymmetry.
+\item \texttt{time\_to\_peak\_frac} --- fraction of the step elapsed when total pressure peaks.
+\item \texttt{gu\_dip\_depth} (F$\approx$101) --- depth of the mid-stance dip in the amplitude-normalised total-pressure curve, $1-\min(\text{midstance})/\max$. Grass shows the deepest dip.
+\item \texttt{gu\_load\_first\_frac} (F$\approx$105) --- fraction of total loading in the first half of the step.
+\item \texttt{gu\_push\_peak} (F$\approx$96) --- height of the push-off (second) peak in the normalised curve.
+\item \texttt{gu\_load\_slope} and \texttt{gu\_unload\_slope} (F$\approx$138) --- max rising / min falling slope of the normalised total curve (ground-up complements to the slope features).
+\item \texttt{gu\_stance\_frac} (F$\approx$119) --- fraction of the step above half the mean total pressure: how much of the cycle is solidly loaded.
+\end{itemize}
+
+\section{Weight distribution (heel vs forefoot)}
+\begin{itemize}
+\item \texttt{heel\_fore\_ratio} (F$\approx$158) --- mean heel pressure $\div$ mean forefoot pressure: where load sits front-to-back.
+\item \texttt{heel\_impulse\_norm} (F$\approx$176) --- heel pressure integrated over the step, session-normalised (time-under-load at the heel).
+\item \texttt{heel\_skew} (F$\approx$62) --- and \texttt{heel\_kurt} (F$\approx$51) --- skewness and kurtosis of the heel-pressure time series (heel loading profile shape).
+\item \texttt{heel\_ripple\_frac} (F$\approx$172) --- fraction of high-frequency ``ripple'' in the heel signal (mortar-joint chatter).
+\item \texttt{midstance\_diff} --- heel-minus-forefoot balance at the mid-stance (flat-foot) instant.
+\item \texttt{gu\_fore\_early\_frac} (F$\approx$90) --- share of forefoot loading in early stance.
+\item \texttt{gu\_fore\_heel\_toff} --- timing offset between the forefoot and heel pressure peaks.
+\end{itemize}
+
+\section{Pressure-map distribution \& dynamics (spatial, across 12 pads)}
+Treats the 12 sensors as a spatial pressure map.
+\begin{itemize}
+\item \texttt{gu\_spatial\_entropy\_stance} (F$\approx$210) --- and \texttt{gu\_spatial\_entropy\_ff} (F$\approx$38) --- normalised Shannon entropy of the pressure distribution across the 12 pads (over stance, and at flat-foot). High = load spread evenly; low = concentrated on a few pads. Compliant surfaces spread load more.
+\item \texttt{gu\_participation\_ff} (F$\approx$43) --- effective fraction of pads bearing load at flat-foot (inverse participation ratio).
+\item \texttt{gu\_active\_sensors} --- count of pads loaded above 10\% of the peak pad at flat-foot: contact breadth.
+\item \texttt{gu\_cop\_wander} (F$\approx$81) --- mean frame-to-frame change of the normalised pressure map through stance: how much the load shifts around the sole (a dynamic unevenness proxy --- relevant to cobblestone).
+\item \texttt{gu\_press\_jitter} (F$\approx$88) --- mean per-pad temporal jitter (std of the 2nd difference) of pressure, session-normalised: small fluctuations from surface irregularity.
+\item \texttt{stance\_duration\_roll3\_std} (F$\approx$49) --- with \texttt{loading\_rate\_roll3\_std} and \texttt{impact\_mag\_roll3\_std} (F$\approx$42) --- step-to-step variability (rolling 3-step std) of stance duration, loading rate, and impact: gait-consistency measures that rise on irregular ground.
+\end{itemize}
+
+\section{Cross-user pruned feature set}
+Cross-user permutation testing ranks features by how much they help a \emph{held-out person}.
+Pruning the 18 features with $\le 0$ cross-user importance (to 30 features) gives essentially
+identical grouped macro-F1 (33.2\% $\to$ 33.0\%) with less overfitting risk --- recommended as
+data grows. The top cross-user features are \texttt{orient\_rest\_a\_roll3\_std}, \texttt{accel\_jerk\_ratio}, \texttt{orient\_rest\_b\_roll3\_std}, and \texttt{accel\_spec\_centroid}.
+
+\section{Dropped (computed but excluded from the model)}
+Removed because cross-user permutation testing showed they act as a \textbf{person fingerprint}
+(who is walking / how the insole is seated, not the surface) and hurt generalisation:
+\begin{itemize}
+\item \textbf{Per-sensor pressure ratios} --- \texttt{pressure\_01\_mean\_ratio} $\ldots$ \texttt{pressure\_12\_mean\_ratio}, plus \texttt{heel\_mean\_ratio}, \texttt{fore\_mean\_ratio}, \texttt{heel\_pmax\_ratio}, \texttt{fore\_pmax\_ratio}.
+\item \textbf{Raw magnitudes} --- \texttt{total\_p\_mean}, \texttt{total\_pmax}, \texttt{impact\_mag}, \texttt{impact\_mag\_norm}, \texttt{heel\_impulse} (scale with body weight / donning tightness).
+\end{itemize}
+
+\section*{How to read the model, in one line}
+The features that carry the surface signal --- and survive to a new person --- are
+\textbf{step-to-step foot-tilt variability}, \textbf{accelerometer texture/jerk}, \textbf{gyro
+rotation variability}, \textbf{stance timing}, and \textbf{pressure-map spread}. Together these
+describe \emph{compliance} (soft vs firm), which is why grass-vs-hard is reliable, \emph{and}
+\emph{evenness/regularity}, which is the axis the new \textbf{continuous-vs-modular-paved} split
+depends on. That split is promising but currently data-limited: its verdict rests on collecting
+more cobblestone walks from more people.
+\end{document}
