@@ -3984,7 +3984,36 @@
           </ns3:TrackPointExtension>
         </extensions>
       </trkpt>
-      
+      <trkpt lat="42.34000562690198421478271484375" lon="-71.0904276184737682342529296875">
+        <ele>8</ele>
+        <time>2026-05-19T16:16:42.000Z</time>
+        <extensions>
+          <ns3:TrackPointExtension>
+            <ns3:hr>89</ns3:hr>
+            <ns3:cad>50</ns3:cad>
+          </ns3:TrackPointExtension>
+        </extensions>
+      </trkpt>
+      <trkpt lat="42.34000998549163341522216796875" lon="-71.0904165543615818023681640625">
+        <ele>8</ele>
+        <time>2026-05-19T16:16:43.000Z</time>
+        <extensions>
+          <ns3:TrackPointExtension>
+            <ns3:hr>89</ns3:hr>
+            <ns3:cad>51</ns3:cad>
+          </ns3:TrackPointExtension>
+        </extensions>
+      </trkpt>
+      <trkpt lat="42.3400144279003143310546875" lon="-71.0904068313539028167724609375">
+        <ele>7.80000019073486328125</ele>
+        <time>2026-05-19T16:16:44.000Z</time>
+        <extensions>
+          <ns3:TrackPointExtension>
+            <ns3:hr>89</ns3:hr>
+            <ns3:cad>51</ns3:cad>
+          </ns3:TrackPointExtension>
+        </extensions>
+      </trkpt>
     </trkseg>
   </trk>
 </gpx>
