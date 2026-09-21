@@ -37,7 +37,9 @@ points along gravity, giving two tilt axes
 \theta_B=\operatorname{atan2}\!\bigl(a^z,\sqrt{(a^x)^2+(a^y)^2}\bigr)\quad(\text{degrees}).
 \]
 Steps are detected from peaks of $p_t$; windows shorter than $15$ or longer than $150$ samples are
-skipped. No surface markers are read at any point.
+skipped. The score itself uses \emph{no} labels, but for consistency with the classification
+models a \emph{step gate} (\S\,\ref{sec:gate}) removes steps that fall in or across a labelled
+transition; where a recording carries no surface/transition markers, every detected step is kept.
 
 \section{The irregularity features}
 Every feature is oriented so that \textbf{larger $=$ more uneven}. There are two groups.
@@ -86,6 +88,21 @@ quantity jumps around from step to step --- the hallmark of walking on irregular
 $\{$\code{orient_range_a}, \code{orient_range_b}, \code{cop_wander}, \code{press_jitter},
 \code{gyro_std}$\}$ (within-step) plus the five \code{*_roll3_std} (step-to-step).
 
+\section{Step gate (consistency with the classification models)}\label{sec:gate}
+The evenness score is unsupervised, but to make it operate on the \emph{same} steps the supervised
+models keep, recordings that carry surface/transition markers are passed through the identical step
+gate used there. Each surface or \code{transition}/\code{wait} marker opens a row region running to
+the next marker; \code{transition}/\code{wait} regions are \emph{excluded}. A detected step is then
+\textbf{dropped} if its window (i)~touches an excluded (transition/wait) row, (ii)~straddles two
+different labelled surfaces, or (iii)~is less than $80\%$ inside a single labelled surface
+(a partial / segment-edge step). Recordings without markers are ungated (all steps kept), so the
+score remains fully label-free wherever labels are absent.
+
+\medskip\noindent\emph{Note.} The evenness notebook and the classification notebooks segment steps
+by slightly different peak detectors (total pressure vs.\ heel sensors), so after identical gating
+the two step \emph{counts} still differ by ${\sim}1\%$; this is a detection difference, not a gating
+one, and is immaterial to a distribution-level score fitted over thousands of steps.
+
 \section{From features to a 0--100 score}
 
 \paragraph{Robust standardisation.} Each feature is standardised by its \emph{median} and
@@ -130,28 +147,33 @@ set), not ``the median step of whatever file this happens to be.''
 Although no labels are used to build it, grouping the score by surface (where tags exist) shows it
 lands exactly where physical intuition says it should:
 \begin{center}
-\begin{tabular}{@{}lccc@{}}
+\begin{tabular}{@{}lcl@{}}
 \toprule
 surface & mean evenness & interpretation \\
 \midrule
-grass & ${\approx}\,40$ & compliant, irregular --- \emph{least even} \\
-loose & ${\approx}\,51$--$55$ & firm, fairly regular \\
-paved & ${\approx}\,51$--$52$ & firm, regular \\
+grass            & ${\approx}\,40$        & compliant, irregular --- \emph{least even} \\
+loose            & ${\approx}\,51$--$55$  & firm, fairly regular \\
+continuous\_paved & ${\approx}\,55$--$56$  & firm, smooth, regular --- \emph{most even} \\
+modular\_paved    & ${\approx}\,50$--$51$  & firm but bumpy (cobblestone) --- below continuous paved \\
 \bottomrule
 \end{tabular}
 \end{center}
 Two things follow. First, the score \textbf{recovers the compliance axis unsupervised}: grass
 (soft, uneven) is cleanly separated below the firm surfaces, with no target ever supplied. Second,
-it is \textbf{not} a paved-vs-loose discriminator --- those score almost identically, which is
-honest: a smooth compact-dirt path really is about as regular to walk on as pavement, so a
-\emph{gait-regularity} metric should not, and does not, tell them apart. Evenness measures how
-steady the walking is, which is the soft-vs-firm distinction, not surface material \emph{per se}.
+within the firm surfaces it orders them by \emph{regularity}: continuous paved (smooth) scores
+highest, while \textbf{modular paved} (cobblestone / uneven brick) sits below it --- the score picks
+up the bumpiness of cobblestone even though both are rigid. It is \textbf{not} a paved-vs-loose
+material discriminator (loose compact dirt and pavement score similarly, which is honest --- a smooth
+dirt path really is about as regular to walk on as pavement). Evenness measures how steady the
+walking is --- the soft-vs-firm and smooth-vs-bumpy axes --- not surface material \emph{per se}.
+\emph{Caveat:} the modular\_paved figure rests on limited data (currently one walker's cobblestone
+recordings), so its position is indicative, not yet firmly established.
 
 \section*{One-line reading}
 Evenness is an equal-weight, robustly-standardised composite of ten within-step and step-to-step
 irregularity features, calibrated through the normal CDF to a transferable 0--100 scale
 ($50=$ typical step, higher $=$ smoother). With no labels, it reproduces the compliance axis ---
-grass scores distinctly low, firm surfaces high --- making it a label-free companion to the
+grass scores distinctly low, firm surfaces high (and cobblestone below smooth pavement) --- making it a label-free companion to the
 supervised soft-vs-hard model rather than a replacement for it.
 
 \end{document}
