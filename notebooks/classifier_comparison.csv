@@ -1,0 +1,11 @@
+task,classifier,macroF1_mean,macroF1_sd,n_folds
+2class,SVM-RBF,0.656,0.134,4
+2class,SVM-linear,0.582,0.161,4
+2class,SVM-poly,0.726,0.054,4
+2class,k-NN,0.595,0.145,4
+2class,XGBoost,0.692,0.07,4
+3class,SVM-RBF,0.353,0.066,4
+3class,SVM-linear,0.475,0.022,4
+3class,SVM-poly,0.321,0.102,4
+3class,k-NN,0.391,0.076,4
+3class,XGBoost,0.476,0.067,4
