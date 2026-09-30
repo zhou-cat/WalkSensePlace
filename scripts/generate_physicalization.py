@@ -1,6 +1,4 @@
-#!/usr/bin/env python3
 """
-generate_physicalization.py
 Generate 3D-printable foot heightmaps (STL) + previews (PNG) for a PAIR of insole
 recordings — one even, one uneven — for the GroundWalks tactile physicalization.
 
@@ -70,12 +68,12 @@ TEMPLATE=COORDS_L
 # ---- terrain (mountain-range ridge) knobs -- tune against test prints; only your feet judge the feel ----
 TERRAIN_DEFAULT=dict(
     n_ridges=4,           # sparse meandering ridges ('mountain ranges'). ~2-4; more -> washboard.
-    min_ridge_spacing_mm=45.0, # min distance between ridge SEED points (prevents bunching)
-    max_ridge_mm=10.0,    # tallest crest height (mm) for the MOST-UNEVEN walk
+    min_ridge_spacing_mm=43.0, # min distance between ridge SEED points (prevents bunching)
+    max_ridge_mm=14.0,    # tallest crest height (mm) for the MOST-UNEVEN walk
     even_ridge_mm=3.0,    # crest height (mm) for the MOST-EVEN walk -> overall relief scales with evenness
     crest_mean_frac=0.55, # a 'typical' crest sits at this fraction of the (evenness-scaled) max
     crest_var_min=0.02,   # ALONG-CREST height variation when EVEN (near-constant, smooth speed-bump)
-    crest_var_max=0.45,   # ALONG-CREST height variation when UNEVEN (jagged range) -> unevenness dial
+    crest_var_max=0.55,   # ALONG-CREST height variation when UNEVEN (jagged range) -> unevenness dial
     ridge_w_min=7.0,      # ridge half-width sigma (mm): narrow=root ...
     ridge_w_max=15.0,     # ... wide=broad ridge
     ridge_wiggle=0.18,    # how much each ridge path meanders (fraction of sole length)
