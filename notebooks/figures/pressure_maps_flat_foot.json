@@ -1,0 +1,38 @@
+{
+  "foot": "left",
+  "sole_id": 2,
+  "sole_size": 42,
+  "sole_w_mm": 106.3,
+  "sole_l_mm": 271.3,
+  "window": "flat_foot",
+  "value_mode": "raw",
+  "aggregation": "balanced",
+  "render": "blend",
+  "blend_sigma_px": 18.0,
+  "facet": "user",
+  "scale": "per_user",
+  "zone_area_coverage_pct": 39.7,
+  "common_users_only": false,
+  "n_steps": 7841,
+  "steps_per_surface": {
+    "grass": 1887,
+    "loose": 1003,
+    "paved": 4951
+  },
+  "users": [
+    "Catherine",
+    "Kristian",
+    "Sam",
+    "Samantha"
+  ],
+  "walker_labels_available": true,
+  "recordings": 53,
+  "filter_stats": {
+    "seen": 7841,
+    "transition": 0,
+    "partial": 0,
+    "kept": 7841,
+    "excluded": 884
+  },
+  "source": "raw REC_*.csv, segmentation and gate copied from ground_condition_xgboost_v21_merged_3class.ipynb"
+}
