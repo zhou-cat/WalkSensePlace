@@ -132,8 +132,8 @@ PRESETS={
 # volume lies inside it, and is then drawn in full, so the remainder carries on past the
 # framework of the foot.
 PLATE_DEFAULT = dict(
-    length_in=14.0,       # plate long axis (foot heel-to-toe direction)
-    width_in=10.0,        # plate short axis
+    length_in=11.8,       # plate long axis (foot heel-to-toe direction)
+    width_in=11.8,        # plate short axis
     corner_r_mm=25.4,     # rounded corner radius
     oval_margin_mm=12.0,  # oval = sole size + this margin on every side
     oval_w_mm=None,       # explicit oval width override (mm)
@@ -148,7 +148,7 @@ PLATE_DEFAULT = dict(
                           # remaining fraction spills onto the plate untouched. The oval
                           # is purely this rule - it is never marked on the print.
     max_seed_tries=60,    # candidate seeds to try per ridge before giving up
-    bed_mm=None,          # set to (x,y) mm to get a bed-fit warning; None = no check
+    bed_mm=(300,300),          # set to (x,y) mm to get a bed-fit warning; None = no check
 )
 IN_MM = 25.4
 
