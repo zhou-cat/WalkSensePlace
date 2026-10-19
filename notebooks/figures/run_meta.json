@@ -1,0 +1,27 @@
+{
+  "base": "C:\\Users\\Sam\\WalkSensePlace",
+  "recordings": 78,
+  "users": [
+    "Catherine",
+    "Kristian",
+    "Sam",
+    "Samantha"
+  ],
+  "steps_kept": 21527,
+  "gate": {
+    "kept": 21527,
+    "excluded": 2359,
+    "transition": 2,
+    "unlabelled": 309,
+    "short": 0
+  },
+  "strict_gate": true,
+  "drop_unlabelled": true,
+  "events_used": true,
+  "reg_source": "left",
+  "reg_trim_pct": 0.0,
+  "group_by": [
+    "user",
+    "surface"
+  ]
+}
