@@ -1,0 +1,13 @@
+Surface,Source,Share
+grass,Ground truth,0.0833
+loose,Ground truth,0.0083
+paved,Ground truth,0.9083
+unknown,Ground truth,0.0
+grass,GIS,0.0792
+loose,GIS,0.0
+paved,GIS,0.825
+unknown,GIS,0.0958
+grass,Prediction model,0.0875
+loose,Prediction model,0.0208
+paved,Prediction model,0.8792
+unknown,Prediction model,0.0125

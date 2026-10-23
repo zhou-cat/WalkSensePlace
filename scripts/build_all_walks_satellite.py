@@ -988,6 +988,22 @@ def build_html(name, layers, agree, lines_on, scrim, basemap, weight, truth_fx=T
             .replace('__STADIA_KEY__', STADIA_KEY))
 
 
+def csv_for_gpx(gpx_path, csvs):
+    """The walk CSV for a GPX, by filename stamp first.
+
+    GPS/REC_<stamp>.gpx pairs with GPS/REC_<stamp>_GPS.csv. Time overlap is kept as a
+    fallback for oddly named files, but a stamp match is exact: overlap alone can pick the
+    wrong recording when two walks are close together or one CSV is missing.
+    """
+    import os as _os
+    stem = _os.path.splitext(_os.path.basename(gpx_path))[0]
+    for p in csvs:
+        b = _os.path.splitext(_os.path.basename(p))[0]
+        if b == stem + '_GPS' or b == stem:
+            return p
+    return None
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('walks_dir', nargs='?', default='.')
@@ -1071,6 +1087,11 @@ def main():
                     help='cap on embedded GIS polygons per walk')
     ap.add_argument('--scrim', type=int, default=25,
                     help='white scrim over imagery, 0-90 percent (default 25)')
+    ap.add_argument('--pred-dir', default=None,
+                    help="folder holding <stem>_pred_3class.geojson etc. Point it at "
+                         "predict_walks.py's --out to choose which model's predictions are "
+                         "drawn, e.g. GPS/walk_maps_cnn. Searched before --out and "
+                         "<walks_dir>/walk_maps.")
     ap.add_argument('--map-match', action='store_true',
                     help='DRAW the lines on a track snapped to the mapped footways (OSM '
                          'export). Display only: labels still use the raw GPS fixes.')
@@ -1159,6 +1180,20 @@ def main():
     layers = (base.build_tree(sw, [base.sw_class(v) for v in sw[sw_field]] if sw_field else []),
               base.build_tree(lc, [base.lc_class(v) for v in lc[lc_field]] if lc_field else []),
               base.build_tree(osp, ['grass'] * len(osp) if osp is not None else []))
+    # name the prediction line after whichever model wrote it, so a CNN map is not
+    # labelled 'XGBoost' by accident
+    _model_label = 'model 3-class'
+    for _d in (a.pred_dir, a.out, os.path.join(a.walks_dir, 'walk_maps')):
+        _rj = os.path.join(_d, 'predict_walks_run.json') if _d else None
+        if _rj and os.path.exists(_rj):
+            try:
+                _m = (json.load(open(_rj)) or {}).get('model')
+                if _m:
+                    _model_label = f'model 3-class ({"1D-CNN" if _m == "cnn" else "XGBoost"})'
+                    print(f'  prediction layers from {_d} ({_m})')
+            except Exception:
+                pass
+            break
     osm = None if a.no_osm else read_osm(a.osm, compacted=a.osm_compacted)
     if a.legacy_reach:
         reach = dict(LEGACY_REACH)
@@ -1215,14 +1250,19 @@ def main():
         stem = os.path.splitext(os.path.basename(gpx))[0]
         if len(pts) < 2:
             print(f'[skip] {stem}: <2 pts'); continue
-        g0, g1 = pts[0]['tms'], pts[-1]['tms']
-        best, ov = None, 0
-        for p, r in csvs.items():
-            if not r:
-                continue
-            o = max(0, min(g1, r[1]) - max(g0, r[0]))
-            if o > ov:
-                ov, best = o, p
+        best = csv_for_gpx(gpx, csvs)          # exact stamp match
+        if best is None:                        # fallback: largest time overlap
+            g0, g1 = pts[0]['tms'], pts[-1]['tms']
+            ov = 0
+            for p, r in csvs.items():
+                if not r:
+                    continue
+                o = max(0, min(g1, r[1]) - max(g0, r[0]))
+                if o > ov:
+                    ov, best = o, p
+            if best:
+                print(f'[note] {stem}: no REC_<stamp>_GPS.csv; using {os.path.basename(best)} '
+                      'by time overlap')
         tags = base.tagged_from_csv(best, pts) if best else [None] * len(pts)
         nearest = point_nearest([(p['lon'], p['lat']) for p in pts], layers, osm=osm)
         cands = apply_reach(nearest, reach)
@@ -1252,7 +1292,9 @@ def main():
         json.dump(gis_fc, open(os.path.join(a.out, f'{stem}_surface.geojson'), 'w'))
 
         def _load(tag):
-            for d in (a.out, os.path.join(a.walks_dir, 'walk_maps')):
+            for d in (a.pred_dir, a.out, os.path.join(a.walks_dir, 'walk_maps')):
+                if not d:
+                    continue
                 pth = os.path.join(d, f'{stem}_{tag}.geojson')
                 if os.path.exists(pth):
                     try:
@@ -1266,7 +1308,7 @@ def main():
                       'cat', None, 'gis')]
         fc = _load('pred_3class')
         if fc:
-            maplayers.append(('model 3-class', fc, 'surface', 'cat', None, 'model3'))
+            maplayers.append((_model_label, fc, 'surface', 'cat', None, 'model3'))
         ev = _load('evenness'); hd = _load('hardness')
         if ev:
             maplayers.append(('evenness', ev, 'value', 'cont', RAMP_EVEN, 'evenness'))

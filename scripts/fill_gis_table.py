@@ -59,13 +59,22 @@ def gis_at_steps(pts, gis_seg_vals, step_t, max_gap_ms=1500):
     return vals
 
 
-def predict(model, pdf):
+def predict(model, pdf, Xseq=None):
+    """Labels from either model kind. The CNN's tuple is ('cnn', model, encoder)."""
+    if model[0] == 'cnn':
+        _, m, le = model
+        if Xseq is None or not len(Xseq):
+            return None
+        return le.inverse_transform(pw.cnn_predict(_NS, m, Xseq))
     m, le, feats = model
     X = pdf.copy()
     for c in feats:
         if c not in X:
             X[c] = 0.0
     return le.inverse_transform(m.predict(X[feats].fillna(0).values))
+
+
+_NS = {}          # the extractor namespace, needed by predict() for the CNN device
 
 
 def rec_key(path):
@@ -78,7 +87,7 @@ def rec_key(path):
     return (stem[:-4] if stem.endswith('_GPS') else stem) + ext
 
 
-def find_walk_recording(gpx_pts, walks_dir, pred_dir, train_dir):
+def _unused_find_walk_recording(gpx_pts, walks_dir, pred_dir, train_dir):
     """The insole recording for a walk: its unsuffixed REC_x.csv, searched in --pred-dir,
     --train-dir and the walks folder; falls back to the paired REC_x_GPS.csv."""
     gps = pw.paired_gps_csv(gpx_pts, walks_dir)
@@ -107,6 +116,12 @@ def main():
     ap.add_argument('--gis-dir', default=None,
                     help='folder with <stem>_surface.geojson (default <walks-dir>/walk_maps_satellite)')
     ap.add_argument('--out', default=None, help='output folder (default --gis-dir)')
+    ap.add_argument('--model', choices=['xgboost', 'cnn'], default='xgboost',
+                    help='which model the table scores (the GIS row is unaffected)')
+    ap.add_argument('--cnn-notebook', default=None,
+                    help='the CNN comparison notebook (required with --model cnn)')
+    ap.add_argument('--cnn-epochs', type=int, default=None,
+                    help="cap the CNN's epochs; it is refit once per regime per walk")
     a = ap.parse_args()
     a.gis_dir = a.gis_dir or os.path.join(a.walks_dir, 'walk_maps_satellite')
     a.out = a.out or a.gis_dir
@@ -122,21 +137,53 @@ def main():
     else:
         print(f'[warning] no summary.csv in {a.gis_dir}: cannot confirm how the GIS labels were built')
 
-    print('loading extractor ...'); ns = pw.load_extractor(a.notebook)
+    global _NS
+    print('loading extractor ...'); ns = pw.load_extractor(a.notebook); _NS = ns
+    if a.model == 'cnn':
+        if not a.cnn_notebook:
+            sys.exit('--model cnn requires --cnn-notebook')
+        print('loading CNN ...'); pw.load_cnn(a.cnn_notebook, ns)
+        print(f"  CNN on {ns.get('device', 'cpu')}")
     print('building training features ...'); full = pw.build_training(ns, a.train_dir)
-    user_of = {rec_key(f): os.path.basename(os.path.dirname(f))
+    user_of = {pw.walk_stamp(f): os.path.basename(os.path.dirname(f))
                for f in pw.find_recordings(a.train_dir)}
     # Kept OUTSIDE the training table: train_surface treats every column not in META as a
     # feature, so a user column inside it would be trained on (or crash, being text).
-    train_keys = full['source_recording'].map(rec_key)
+    train_keys = full['source_recording'].map(pw.walk_stamp)
     users = train_keys.map(user_of)
     drop = ns.get('DROP_FEATURES', [])
     print(f'  {len(full)} labelled steps, {full.source_recording.nunique()} recordings, '
           f'users {sorted(users.dropna().unique())}')
-    m_all = pw.train_surface(full, drop, False)          # the walk-map model
     all_classes = set(full['surface'])
+    cnnX = cnnY = cnn_stamps = None
+    if a.model == 'cnn':
+        print('building CNN training windows ...')
+        cnnX, cnnY, cnnR = pw.cnn_build_training(ns, a.train_dir)
+        cnn_stamps = np.array([pw.walk_stamp(r) for r in cnnR], dtype=object)
+        print(f'  {len(cnnX)} windows')
 
-    def held_out(mask, what):
+    def fit(mask, what):
+        """Fit the chosen model on the masked training set, or None if a class is absent."""
+        sub = full if mask is None else full[mask.values]
+        missing = sorted(all_classes - set(sub['surface']))
+        if not len(sub) or missing:
+            print(f'    [{what}] skipped: holding out leaves '
+                  + ('no training data' if not len(sub) else f'no {missing} steps'))
+            return None
+        if a.model == 'cnn':
+            stamps = set(sub['source_recording'].map(pw.walk_stamp))
+            keep = np.fromiter((st in stamps for st in cnn_stamps), bool, len(cnn_stamps))
+            if not keep.any() or (all_classes - set(cnnY[keep])):
+                print(f'    [{what}] skipped: CNN windows missing a class')
+                return None
+            return ('cnn',) + pw.cnn_train(ns, cnnX[keep], cnnY[keep],
+                                           ns.get('CLASS_WEIGHT_STRENGTH', 0.5),
+                                           max_epochs=a.cnn_epochs, label=f' [{what}]')
+        return pw.train_surface(sub, drop, False)
+
+    m_all = fit(None, 'as mapped')
+
+    def _old_held_out(mask, what):
         # a held-out training set that is empty, or lacks a class, gives a model that can
         # never predict that class: report and skip that row rather than score it
         sub = full[mask.values]
@@ -155,7 +202,11 @@ def main():
         if len(pts) < 2 or not os.path.exists(gpath):
             print(f'[skip] {stem}: ' + ('<2 GPS points' if len(pts) < 2 else f'no {gpath}'))
             continue
-        rec = find_walk_recording(pts, a.walks_dir, a.pred_dir, a.train_dir)
+        # the WALK copy (GPS/REC_<stamp>_GPS.csv) is what gets scored; the training copy
+        # under Individual Users is for fitting only. They are the same recording with two
+        # tagging regimes, so substituting one for the other reads the wrong tags.
+        stamp = pw.walk_stamp(gpx)
+        rec = pw.find_walk_csv(stamp, a.walks_dir)
         if not rec:
             print(f'[skip] {stem}: no recording found'); continue
         pdf = pw.extract_features(ns, rec)
@@ -176,22 +227,30 @@ def main():
         yt = sub['surface'].values
         gis = np.array([v for v in g if v is not None], dtype=object)
 
-        rb = rec_key(rec); u = user_of.get(rb)
+        rb = stamp; u = user_of.get(rb)
         in_train = rb in set(train_keys)
-        preds = {'as mapped': predict(m_all, sub)}
+        Xw = None
+        if a.model == 'cnn':
+            Xw_all, _, tw = pw.cnn_windows(ns, rec, labelled_only=False)
+            # keep only the windows that survived the same step filter as `sub`
+            Xw = Xw_all[:len(sub)] if len(Xw_all) >= len(sub) else None
+            if Xw is None:
+                print(f'    [warn] {stem}: {len(Xw_all)} CNN windows for {len(sub)} steps '
+                      '- cannot align, skipping the CNN rows'); 
+        preds = {'as mapped': predict(m_all, sub, Xw) if m_all else None}
         if in_train:
-            mw = held_out(train_keys != rb, 'leave-one-walk-out')
-            preds['leave-one-walk-out'] = predict(mw, sub) if mw else None
+            mw = fit(train_keys != rb, 'leave-one-walk-out')
+            preds['leave-one-walk-out'] = predict(mw, sub, Xw) if mw else None
         else:
             preds['leave-one-walk-out'] = preds['as mapped']   # walk never trained on
-        mu = held_out(users != u, 'leave-one-user-out') if u is not None else None
-        preds['leave-one-user-out'] = predict(mu, sub) if mu else None
+        mu = fit(users != u, 'leave-one-user-out') if u is not None else None
+        preds['leave-one-user-out'] = predict(mu, sub, Xw) if mu else None
         print(f'[ok] {stem}: {len(sub)} steps ({int((~keep).sum())} without GPS) | '
               f'features from {rec} | recording {rb} {"IS" if in_train else "is NOT"} in training'
               + (f', user {u}' if u else ', user unknown - no leave-one-user-out'))
 
         for src, yp in [('GIS', gis)] + [(m, preds[m]) for m in MODES]:
-            if yp is None:
+            if yp is None or len(yp) != len(yt):
                 continue
             per_walk.append(dict(walk=stem, source=src, in_training=in_train, **metrics(yt, yp)))
             pooled[src][0].extend(yt); pooled[src][1].extend(yp)

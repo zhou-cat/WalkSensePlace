@@ -19,10 +19,26 @@ Follows the paper's pipeline, as defined in the v21 notebook it loads:
     refused rather than misapplied.
   * each step is placed on the track at its INITIAL CONTACT.
 
-Walk-in-training: by default the models train on every recording, so a walk whose
-recording is also under --train-dir is predicted IN-SAMPLE. Each walk's status is
-printed; --holdout walk retrains without that walk's recording (its walker's other walks
-stay in), --holdout user without any of the walker's recordings.
+TWO FILES PER WALK, AND WHAT EACH IS FOR
+    Individual Users/<user>/REC_<stamp>.csv   TRAINING copy: every tag, including the
+                                             transition/wait regions the step gate needs.
+                                             Models and the evenness scaler are fitted on
+                                             these and nothing else.
+    GPS/REC_<stamp>_GPS.csv                   WALK copy: the same recording tagged for
+                                             surface underfoot only. This is the file the
+                                             walk is PREDICTED from, and whose tags are
+                                             the ground truth drawn on the map.
+    GPS/REC_<stamp>.gpx                       the track the steps are placed on.
+The two CSVs hold identical sensor data and differ only in their tag markers, so the walk
+copy is never used for training and the training copy is never used for prediction.
+(Earlier versions substituted the training copy when predicting a walk, which drew the
+map from the wrong tagging regime.)
+
+Walk-in-training: the two copies are the same recording, so training on
+Individual Users/<user>/REC_<stamp>.csv and predicting GPS/REC_<stamp>_GPS.csv means
+predicting steps the model has already seen. Each walk's status is printed;
+--holdout walk refits without that recording (the walker's other recordings stay in),
+--holdout user without any of the walker's recordings.
 
 Usage (from the project folder):
     python scripts/predict_walks.py --notebook notebooks/ground_condition_xgboost_v21_merged_3class.ipynb ^
@@ -43,11 +59,21 @@ XGB_PARAMS = dict(max_depth=4, n_estimators=250, learning_rate=0.05, subsample=0
                   colsample_bytree=0.8, eval_metric='mlogloss', random_state=42, verbosity=0)
 
 
+def walk_stamp(path):
+    """The recording stamp shared by a walk's three files, e.g. REC_20260519_155900.
+
+    GPS/REC_x_GPS.csv, GPS/REC_x.gpx and Individual Users/<u>/REC_x.csv all reduce to
+    REC_x. Used ONLY to recognise that they describe the same walk - for pairing the GPX,
+    for finding the contact-event file, and for holding the recording out of training.
+    It never causes one file to stand in for another.
+    """
+    stem = os.path.splitext(os.path.basename(path))[0]
+    return stem[:-4] if stem.endswith('_GPS') else stem
+
+
 def rec_key(path):
-    """A recording's name with any '_GPS' suffix removed (REC_x_GPS.csv -> REC_x.csv), so a
-    walk's copy and its training twin are recognised as the same recording."""
-    b = os.path.basename(path); stem, ext = os.path.splitext(b)
-    return (stem[:-4] if stem.endswith('_GPS') else stem) + ext
+    """Back-compat for scripts that import this module (fill_gis_table, time_inference)."""
+    return walk_stamp(path) + '.csv'
 
 
 # ======================= notebook extractor + contact events =======================
@@ -110,7 +136,7 @@ def _gc_index(ns):
         gd = ns.get('GC_DIR')
         if gd and os.path.isdir(gd):
             for f in glob.glob(os.path.join(gd, '**', '*_groundcontact.csv'), recursive=True):
-                idx[os.path.basename(f)[:-len('_groundcontact.csv')] + '.csv'] = \
+                idx[os.path.basename(f)[:-len('_groundcontact.csv')]] = \
                     os.path.basename(os.path.dirname(f))
         ns['_GC_INDEX'] = idx
     return ns['_GC_INDEX']
@@ -122,21 +148,36 @@ def recording_events(ns, rec_path, sole_id):
     recordings outside Individual Users too."""
     if ns.get('SEGMENTATION') != 'events' or 'contact_events' not in ns:
         return None
-    key = rec_key(rec_path); user = _gc_index(ns).get(key)
+    key = walk_stamp(rec_path); user = _gc_index(ns).get(key)
     if user is None:
         return None
-    return ns['contact_events'](user, os.path.join('x', key), sole_id)
+    return ns['contact_events'](user, os.path.join('x', key + '.csv'), sole_id)
 
 
 def has_events(ns, rec_path):
-    return rec_key(rec_path) in _gc_index(ns)
+    return walk_stamp(rec_path) in _gc_index(ns)
 
 
 def find_recordings(root):
+    """TRAINING recordings only: Individual Users/<user>/REC_*.csv.
+
+    _GPS copies are excluded here by design - they are walk files, not training files.
+    """
     files = glob.glob(os.path.join(root, '**', 'REC_*.csv'), recursive=True) or \
             glob.glob(os.path.join(root, '**', '*.csv'), recursive=True)
     return sorted(f for f in files if '_GPS' not in os.path.basename(f)
                   and not f.endswith('_groundcontact.csv'))
+
+
+def find_walk_csv(stamp, walks_dir):
+    """The walk copy for a stamp: GPS/REC_<stamp>_GPS.csv, else GPS/REC_<stamp>.csv."""
+    for name in (stamp + '_GPS.csv', stamp + '.csv'):
+        p = os.path.join(walks_dir, name)
+        if os.path.exists(p):
+            return p
+    hits = [p for p in glob.glob(os.path.join(walks_dir, '**', stamp + '*.csv'), recursive=True)
+            if not p.endswith('_groundcontact.csv')]
+    return hits[0] if hits else None
 
 
 def _extract_recording(ns, raw, rec_path, ss, labelled_only):
@@ -176,12 +217,201 @@ def build_training(ns, train_dir):
     return full[full['surface'] != 'unknown']
 
 
+def walk_truth(ns, csv_path):
+    """Per-step ground truth from a WALK file's own tags, as (t_ms, surface) pairs.
+
+    The walk copy tags surface underfoot only, so steps are labelled by the surface marker
+    they fall under without the training gate's transition and partial-label rules.
+    """
+    raw = pd.read_csv(csv_path, low_memory=False)
+    if 'sole_id' not in raw.columns:
+        return []
+    out = []
+    for sole in raw['sole_id'].dropna().unique():
+        sub = raw[raw['sole_id'] == sole].copy()
+        lab = ns['label_surface_segments'](sub)
+        if lab is None or 'surface' not in lab.columns:
+            continue
+        dfp = ns['preprocess'](lab)
+        ev = recording_events(ns, csv_path, int(float(sole)))
+        if ns.get('SEGMENTATION') == 'events' and ev is None:
+            continue
+        tot = dfp[[c for c in dfp.columns if c.startswith('pressure_')]].to_numpy(float).sum(1)
+        ts = pd.to_numeric(dfp['timestamp'], errors='coerce').values
+        if ns.get('SEGMENTATION') == 'events' and ev is not None:
+            st, en = ns['event_windows'](dfp, ev)
+        else:
+            pk = ns['find_step_windows'](dfp)
+            st, en = (pk[:-1], pk[1:]) if len(pk) >= 2 else ([], [])
+        sv = dfp['surface'].values
+        _excl = {ns.get('EXCLUDE_LABEL', '__exclude__'), 'unknown', ''}
+        for a_, b_ in zip(np.asarray(st, int), np.asarray(en, int)):
+            lab_in = [v for v in sv[a_:b_] if isinstance(v, str) and v and v not in _excl]
+            if not lab_in:
+                continue        # unlabelled, or inside a transition the walk file marks
+            vals, cnts = np.unique(lab_in, return_counts=True)
+            out.append((float(ts[a_]), str(vals[int(np.argmax(cnts))])))
+    return out
+
+
 def extract_features(ns, csv_path):
     css = ns.get('compute_session_stats', lambda r: None)
     raw = pd.read_csv(csv_path, low_memory=False)
     if 'sole_id' not in raw.columns: return pd.DataFrame()
     frames = _extract_recording(ns, raw, csv_path, css(raw), labelled_only=False)
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+
+# ============================ the 1D-CNN option ==========================
+# The CNN learns from raw step windows instead of per-step features, so it needs its own
+# extractor cells from the CNN notebook: SEQ_CHANNELS/T_LEN, _channel_matrix,
+# _resample_zscore, step_windows_from_df (cell 5) and Conv1dNet/train_fold (cell 6).
+# Segmentation, the step gate and the contact events are shared with the feature pipeline,
+# so both models cut the same windows.
+def _defs_only(cell):
+    """Keep only imports, constants, functions and classes from a notebook cell.
+
+    The CNN cells end with driver code that builds the notebook's own arrays; running it
+    here would fail (no data in scope) or do work twice. Parsing the cell and re-emitting
+    just the definitions takes the pieces without the side effects.
+    """
+    import ast as _ast
+    tree = _ast.parse(cell)
+    keep = []
+    for node in tree.body:
+        if isinstance(node, (_ast.Import, _ast.ImportFrom, _ast.FunctionDef,
+                             _ast.AsyncFunctionDef, _ast.ClassDef)):
+            keep.append(node)
+        elif isinstance(node, _ast.Assign) and all(
+                isinstance(t, _ast.Name) for t in node.targets):
+            try:                      # constants only: T_LEN = 64, SEQ_CHANNELS = [...]
+                _ast.literal_eval(node.value); keep.append(node)
+            except Exception:
+                pass
+        elif isinstance(node, _ast.Try):
+            keep.append(node)         # the usual "try: import torch" guard
+    return _ast.unparse(_ast.Module(body=keep, type_ignores=[]))
+
+
+def load_cnn(nb_path, ns):
+    """Add the CNN notebook's window builder and model to an existing namespace."""
+    nb = json.load(open(nb_path, encoding='utf-8'))
+    codes = [''.join(c['source']) for c in nb['cells'] if c['cell_type'] == 'code']
+    seq = next(s for s in codes if 'def step_windows_from_df' in s)
+    mdl = next(s for s in codes if 'class Conv1dNet' in s)
+    cfg = next(s for s in codes if 'T_LEN' in s)
+    for name, cell in (('cnn-cfg', cfg), ('cnn-seq', seq), ('cnn-model', mdl)):
+        try:
+            exec(compile(_defs_only(cell), name, 'exec'), ns)
+        except ModuleNotFoundError as e:
+            if 'torch' in str(e):
+                raise SystemExit('--model cnn needs PyTorch. Check with:\n'
+                                 '  python -c "import torch; print(torch.__version__, '
+                                 'torch.cuda.is_available())"')
+            raise
+        except Exception as e:                       # the config cell may lack context
+            if name != 'cnn-cfg':
+                raise RuntimeError(f'could not load {name} from {nb_path}: {e}')
+    if 'device' not in ns:          # a computed assignment, so not kept by _defs_only
+        import torch
+        ns['device'] = 'cuda' if torch.cuda.is_available() else 'cpu'
+    for need in ('step_windows_from_df', 'Conv1dNet', 'train_fold', 'T_LEN', 'SEQ_CHANNELS'):
+        if need not in ns:
+            raise RuntimeError(f"{nb_path} did not define {need}")
+    return ns
+
+
+def _gate_counter():
+    """The counter dict step_surface_label expects, fresh per recording."""
+    return {'seen': 0, 'transition': 0, 'partial': 0, 'kept': 0, 'excluded': 0}
+
+
+def cnn_windows(ns, csv_path, labelled_only):
+    """Raw step windows (and labels, and step times) from one recording."""
+    raw = pd.read_csv(csv_path, low_memory=False)
+    if 'sole_id' not in raw.columns:
+        return np.empty((0, ns['T_LEN'], len(ns['SEQ_CHANNELS'])), np.float32), [], []
+    Xs, ys, ts = [], [], []
+    soles = [(1, 'right'), (2, 'left')] if labelled_only else \
+            [(sv, '') for sv in raw['sole_id'].dropna().unique()]
+    for sole, _foot in soles:
+        sub = raw[raw['sole_id'] == sole].copy()
+        lab = ns['label_surface_segments'](sub)
+        if labelled_only and (lab is None or not len(lab)):
+            continue
+        dfp = ns['preprocess'](lab if lab is not None else sub)
+        ev = recording_events(ns, csv_path, int(float(sole)))
+        if ns.get('SEGMENTATION') == 'events' and ev is None:
+            continue
+        # NOTE: step_windows_from_df's `stats` is the step-gate COUNTER dict that
+        # step_surface_label increments, not the session statistics. Passing session
+        # stats here raises KeyError('excluded').
+        W, L = ns['step_windows_from_df'](dfp, _gate_counter(), events=ev)
+        if not len(W):
+            continue
+        tms = pd.to_numeric(dfp['timestamp'], errors='coerce').values
+        st = (ns['event_windows'](dfp, ev)[0] if (ns.get('SEGMENTATION') == 'events' and ev is not None)
+              else ns['find_step_windows'](dfp)[:-1])
+        Xs.append(np.asarray(W, np.float32)); ys.extend(list(L))
+        ts.extend([float(tms[int(i)]) for i in np.asarray(st, int)[:len(W)]])
+    if not Xs:
+        return np.empty((0, ns['T_LEN'], len(ns['SEQ_CHANNELS'])), np.float32), [], []
+    return np.concatenate(Xs, 0), ys, ts
+
+
+def cnn_build_training(ns, train_dir):
+    """Windows + labels + source recording for every TRAINING recording."""
+    X, y, rec = [], [], []
+    need = ns.get('SEGMENTATION') == 'events' and ns.get('EVENTS_REQUIRED', True)
+    for f in find_recordings(train_dir):
+        if need and not has_events(ns, f):
+            continue
+        Xi, yi, _ = cnn_windows(ns, f, labelled_only=True)
+        keep = [k for k, v in enumerate(yi) if isinstance(v, str) and v and v != 'unknown']
+        if not keep:
+            continue
+        X.append(Xi[keep]); y += [yi[k] for k in keep]
+        rec += [os.path.basename(f)] * len(keep)
+    if not X:
+        sys.exit(f'no labelled CNN windows from {train_dir}')
+    return np.concatenate(X, 0), np.array(y, dtype=object), np.array(rec, dtype=object)
+
+
+def cnn_train(ns, X, y, strength=0.5, seed=42, max_epochs=None, label=''):
+    """Fit Conv1dNet with an internal validation split for early stopping.
+
+    Training is silent inside train_fold, so the caller prints before and after: on CPU a
+    fit over ~20k windows takes minutes, and without this it looks like a hang.
+    """
+    import time as _time, torch
+    from sklearn.preprocessing import LabelEncoder
+    le = LabelEncoder(); yi = le.fit_transform(y)
+    rng = np.random.default_rng(seed); idx = rng.permutation(len(yi))
+    cut = max(1, int(0.15 * len(idx))); va, tr = idx[:cut], idx[cut:]
+    cs, cnt = np.unique(yi[tr], return_counts=True)
+    w = np.ones(len(le.classes_), np.float32)
+    for c, ct in zip(cs, cnt):
+        w[c] = (len(yi[tr]) / (len(cs) * ct)) ** strength
+    kw = {} if max_epochs is None else {'max_epochs': int(max_epochs)}
+    print(f"    CNN fit{label}: {len(tr)} train / {len(va)} val windows on "
+          f"{ns.get('device', 'cpu')}"
+          + (f", max {max_epochs} epochs" if max_epochs else '')
+          + ' ... ', end='', flush=True)
+    _t0 = _time.time()
+    model = ns['train_fold'](X[tr], yi[tr], X[va], yi[va], len(le.classes_), w, **kw)
+    print(f'done in {_time.time() - _t0:.0f}s', flush=True)
+    return model, le
+
+
+def cnn_predict(ns, model, X):
+    import torch
+    model.eval()
+    with torch.no_grad():
+        out = []
+        for i in range(0, len(X), 256):
+            xb = torch.tensor(X[i:i + 256]).to(ns.get('device', 'cpu'))
+            out.append(model(xb).argmax(1).cpu().numpy())
+    return np.concatenate(out) if out else np.array([], int)
 
 
 # ================================ models =================================
@@ -424,6 +654,16 @@ def main():
     global _NS
     ap = argparse.ArgumentParser()
     ap.add_argument('--notebook', required=True); ap.add_argument('--train-dir', required=True)
+    ap.add_argument('--model', choices=['xgboost', 'cnn'], default='xgboost',
+                    help="which model labels the walks' surface class. 'cnn' needs "
+                         '--cnn-notebook and PyTorch; hardness and evenness are unchanged.')
+    ap.add_argument('--cnn-notebook', default=None,
+                    help='the CNN comparison notebook (required with --model cnn)')
+    ap.add_argument('--cnn-epochs', type=int, default=None,
+                    help="cap the CNN's training epochs (the notebook's default is 80). "
+                         'With --holdout walk the CNN is refit once per walk, so on CPU '
+                         'the full run can take an hour or more; 25 is a reasonable cap '
+                         'for a first pass.')
     ap.add_argument('--walks-dir', default='.'); ap.add_argument('--pred-dir', default=None)
     ap.add_argument('--out', default=None)
     ap.add_argument('--gc-dir', default=None, help="'Ground Contact' folder (auto-found if omitted)")
@@ -440,6 +680,12 @@ def main():
     a = ap.parse_args(); a.out = a.out or os.path.join(a.walks_dir, 'walk_maps'); os.makedirs(a.out, exist_ok=True)
 
     print("loading extractor ..."); ns = load_extractor(a.notebook, a.gc_dir, a.train_dir); _NS = ns
+    if a.model == 'cnn':
+        if not a.cnn_notebook:
+            sys.exit('--model cnn requires --cnn-notebook')
+        print('loading CNN ...'); load_cnn(a.cnn_notebook, ns)
+        print(f"  CNN: {len(ns['SEQ_CHANNELS'])} channels x {ns['T_LEN']} samples per step"
+              f"  (device {ns.get('device', 'cpu')})")
     seg = ns.get('SEGMENTATION', 'peaks')
     print(f"  segmentation: {seg}" + (f"  (events from {ns.get('GC_DIR')})" if seg == 'events' else ''))
     if seg == 'events' and not _gc_index(ns):
@@ -448,11 +694,20 @@ def main():
     print("building training features ..."); full = build_training(ns, a.train_dir)
     print(f"  {len(full)} labelled steps {dict(full.surface.value_counts())}")
     drop = ns.get('DROP_FEATURES', [])
-    user_of = {rec_key(f): os.path.basename(os.path.dirname(f)) for f in find_recordings(a.train_dir)}
-    train_keys = full['source_recording'].map(rec_key)
+    user_of = {walk_stamp(f): os.path.basename(os.path.dirname(f))
+               for f in find_recordings(a.train_dir)}
+    train_keys = full['source_recording'].map(walk_stamp)
     users = train_keys.map(user_of)
 
     all_classes = set(full['surface'])
+
+    cnnX = cnnY = cnnR = cnn_stamps = None
+    _fit_label = ['']          # set per walk, so each fit says which walk it is for
+    if a.model == 'cnn':
+        print('building CNN training windows ...')
+        cnnX, cnnY, cnnR = cnn_build_training(ns, a.train_dir)
+        cnn_stamps = np.array([walk_stamp(r) for r in cnnR], dtype=object)
+        print(f'  {len(cnnX)} windows {dict(pd.Series(cnnY).value_counts())}')
 
     def fit_all(mask=None):
         sub = full if mask is None else full[mask.values]
@@ -461,15 +716,43 @@ def main():
             # a held-out model that never saw a class can never predict it - refuse rather
             # than fall back to the in-sample model, which would hide the leakage again
             return None, sorted(missing)
-        m3 = train_surface(sub, drop, False, ns); m2 = train_surface(sub, drop, True, ns)
+        # hardness and evenness always come from the feature pipeline; --model only
+        # decides what labels the 3-class surface layer
+        m2 = train_surface(sub, drop, True, ns)
         hp = train_hardness(sub, a.hardness_weights)
+        if a.model == 'cnn':
+            if mask is None:
+                keep = np.ones(len(cnnY), bool)
+            else:
+                # the stamp set is built ONCE; computing it inside the comprehension
+                # rebuilt it per window (21k windows x 21k rows = minutes of nothing)
+                _keep_stamps = set(sub['source_recording'].map(walk_stamp))
+                keep = np.fromiter((st in _keep_stamps for st in cnn_stamps),
+                                   bool, len(cnn_stamps))
+            if not keep.any() or (all_classes - set(cnnY[keep])):
+                return None, sorted(all_classes - set(cnnY[keep])) or ['(no windows)']
+            m3 = ('cnn',) + cnn_train(ns, cnnX[keep], cnnY[keep],
+                                      ns.get('CLASS_WEIGHT_STRENGTH', 0.5),
+                                      max_epochs=a.cnn_epochs, label=_fit_label[0])
+        else:
+            m3 = train_surface(sub, drop, False, ns)
         return (m3, m2, hp), None
 
     print("training surface models (3-class, 2-class) and hardness P(firm) ...")
     base_models, _ = fit_all()
-    print(f"  3-class model: {len(base_models[0][2])} features, XGBoost {XGB_PARAMS['n_estimators']} trees "
-          f"depth {XGB_PARAMS['max_depth']}, class-weight strength {ns.get('CLASS_WEIGHT_STRENGTH', 0.5)}")
+    if a.model == 'cnn':
+        print(f"  3-class model: 1D-CNN on raw windows "
+              f"({len(ns['SEQ_CHANNELS'])} channels x {ns['T_LEN']} samples), "
+              f"class-weight strength {ns.get('CLASS_WEIGHT_STRENGTH', 0.5)}")
+    else:
+        print(f"  3-class model: {len(base_models[0][2])} features, XGBoost "
+              f"{XGB_PARAMS['n_estimators']} trees depth {XGB_PARAMS['max_depth']}, "
+              f"class-weight strength {ns.get('CLASS_WEIGHT_STRENGTH', 0.5)}")
     print(f"  hardness weights: {a.hardness_weights}   holdout: {a.holdout}")
+    if a.model == 'cnn' and a.holdout != 'none':
+        _nw = len(glob.glob(os.path.join(a.walks_dir, '*.gpx')))
+        print(f"  NOTE: --holdout {a.holdout} refits the CNN once per walk ({_nw} walks). "
+              f"Each fit is silent until it finishes; use --cnn-epochs to cap it.")
 
     even_scaler, src, refused = find_even_scaler(a.evenness_scaler, a.train_dir, a.walks_dir, seg)
     for r in refused:
@@ -483,7 +766,12 @@ def main():
         if not ev_tr: sys.exit("could not build evenness training features")
         even_scaler = fit_even_scaler(pd.concat(ev_tr, ignore_index=True), seg)
 
-    def lab(pdf, model):
+    def lab(pdf, model, Xseq=None):
+        if model[0] == 'cnn':
+            _, m, le = model
+            if Xseq is None or not len(Xseq):
+                return np.array([], dtype=object)
+            return le.inverse_transform(cnn_predict(ns, m, Xseq))
         m, le, feats = model
         X = pdf.reindex(columns=feats).fillna(0).values
         return le.inverse_transform(m.predict(X))
@@ -493,43 +781,62 @@ def main():
         return pipe.predict_proba(pdf.reindex(columns=compl).fillna(0).values)[:, 1] * 100
 
     info = dict(segmentation=seg, gc_dir=ns.get('GC_DIR'), holdout=a.holdout,
-                hardness_weights=a.hardness_weights, xgb=XGB_PARAMS,
+                hardness_weights=a.hardness_weights, xgb=XGB_PARAMS, model=a.model,
                 class_weight_strength=ns.get('CLASS_WEIGHT_STRENGTH', 0.5),
-                n_features_3class=len(base_models[0][2]), evenness_scaler=src or 'fitted here',
+                n_features_3class=(None if a.model == 'cnn' else len(base_models[0][2])), evenness_scaler=src or 'fitted here',
                 step_time='initial contact', walks={})
     for gpx in sorted(glob.glob(os.path.join(a.walks_dir, '*.gpx'))):
         stem = os.path.splitext(os.path.basename(gpx))[0]; pts = parse_gpx(gpx)
         if len(pts) < 2: print(f"[skip] {stem}: <2 pts"); continue
-        gps = paired_gps_csv(pts, a.walks_dir)
-        if not gps: print(f"[warn] {stem}: no insole recording overlaps this GPX"); continue
-        key = rec_key(gps)
-        search = [os.path.join(os.path.dirname(gps), key)]
-        for d in [a.pred_dir, a.walks_dir, _strip_glob(a.train_dir)]:
-            if d: search += glob.glob(os.path.join(d, '**', key), recursive=True)
-        rec = next((c for c in search if c and os.path.exists(c)), gps)
+        # The WALK copy is what gets predicted. Prefer the stamp-matched file in the walks
+        # folder; fall back to time-overlap only if the naming does not match.
+        stamp = walk_stamp(gpx)
+        rec = find_walk_csv(stamp, a.walks_dir) or paired_gps_csv(pts, a.walks_dir)
+        if not rec:
+            print(f"[warn] {stem}: no walk CSV found for {stamp} in {a.walks_dir}"); continue
         if seg == 'events' and not has_events(ns, rec):
-            print(f"[skip] {stem}: no contact-event file for {key} - not predicting with a "
+            print(f"[skip] {stem}: no contact-event file for {stamp} - not predicting with a "
                   "different segmentation"); continue
-        in_train = key in set(train_keys); u = user_of.get(key)
+        # The training twin is the SAME recording, so holding the walk out must drop it.
+        in_train = stamp in set(train_keys); u = user_of.get(stamp)
         if a.holdout == 'walk' and in_train:
-            models, missing = fit_all(train_keys != key); how = 'held out (walk)'
+            _fit_label[0] = f' for {stem} (walk held out)'
+            models, missing = fit_all(train_keys != stamp); how = 'held out (walk)'
         elif a.holdout == 'user' and u is not None:
+            _fit_label[0] = f' for {stem} (user {u} held out)'
             models, missing = fit_all(users != u); how = f'held out (user {u})'
         else:
             missing = None
             models = base_models
-            how = 'IN-SAMPLE (walk is in the training set)' if in_train else 'not in training'
+            how = ('IN-SAMPLE (this recording is also in the training set)' if in_train
+                   else 'not in training')
         if missing:
             print(f"[skip] {stem}: holding it out leaves no {missing} steps in training, so "
                   "that model could never predict them - not written"); continue
         pdf = extract_features(ns, rec)
         if not len(pdf): print(f"[warn] {stem}: 0 steps from {os.path.basename(rec)}"); continue
         t = pd.to_numeric(pdf['t_ms'], errors='coerce').values
+        Xw = tw = None
+        if a.model == 'cnn':
+            Xw, _, tw = cnn_windows(ns, rec, labelled_only=False)
+            if not len(Xw):
+                print(f"[warn] {stem}: 0 CNN windows - skipping"); continue
 
         def write(vals, tag, keyname, fill):
             mv = match_to_track(pts, list(zip(t, vals)), fill=fill)
             json.dump(seg_fc(pts, mv, keyname), open(os.path.join(a.out, f"{stem}_{tag}.geojson"), 'w'))
-        write(lab(pdf, models[0]), 'pred_3class', 'surface', 'unknown')
+        # NOTE: the ground-truth layer (<stem>_tagged.geojson) is written by
+        # build_all_walks.py, which reads the same GPS/REC_*_GPS.csv and tags each GPS fix
+        # directly. Writing it here too would put two differently-derived versions under
+        # one name in the same folder. walk_truth() is kept for callers that want the
+        # per-step truth (fill_gis_table.py).
+        if a.model == 'cnn':
+            p3 = lab(pdf, models[0], Xw)
+            mv = match_to_track(pts, list(zip(tw, p3)), fill='unknown')
+            json.dump(seg_fc(pts, mv, 'surface'),
+                      open(os.path.join(a.out, f'{stem}_pred_3class.geojson'), 'w'))
+        else:
+            write(lab(pdf, models[0]), 'pred_3class', 'surface', 'unknown')
         write(lab(pdf, models[1]), 'pred_2class', 'surface', 'unknown')
         write(hard(pdf, models[2]), 'hardness', 'value', float('nan'))
         evdf = ev_extract(rec, ns)
@@ -539,8 +846,11 @@ def main():
             json.dump(seg_fc(pts, evm, 'value'), open(os.path.join(a.out, f"{stem}_evenness.geojson"), 'w'))
         else:
             print(f"[warn] {stem}: 0 evenness steps")
-        info['walks'][stem] = dict(recording=rec, in_training=in_train, model=how, steps=int(len(pdf)))
-        print(f"[ok] {stem}: {len(pdf)} steps from {rec} | {how}")
+        info['walks'][stem] = dict(walk_csv=rec, in_training=in_train, fitted=how,
+                                   steps=int(len(pdf)),
+                                   cnn_windows=(int(len(Xw)) if Xw is not None else None))
+        print(f"[ok] {stem}: {len(pdf)} steps from {os.path.basename(rec)} "
+              f"(walk copy) | model {a.model} | {how}")
     json.dump(info, open(os.path.join(a.out, 'predict_walks_run.json'), 'w'), indent=1, default=str)
     print(f"\nDone -> geojsons in '{a.out}' (settings in predict_walks_run.json).")
 

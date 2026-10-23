@@ -139,7 +139,7 @@ def build(width_in=5.478, png='insole_42_complete_380p.png'):
     sparkline(ax, 3.0, 20.8, 6.8, 5.4, IMU)
     ax.text(6.4, 19.3, '6-axis IMU', ha='center', fontsize=FS['tiny'],
             color=IMU, fontweight='bold')
-    ax.text(2.4, 13.4, 'Stappone insoles\n62.5 Hz · both feet\n'
+    ax.text(2.4, 13.4, 'Insoles\n62.5 Hz · both feet\n'
                        'contact events · tags · GPX\n4 walkers · 78 recordings',
             ha='left', va='center', fontsize=FS['tiny'], color=GREY,
             linespacing=1.7)

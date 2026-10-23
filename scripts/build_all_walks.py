@@ -394,6 +394,22 @@ def build_html(name, layers, agree):
     return (HTML.replace('__NAME__',name).replace('__AGREE__',agree).replace('__LAYERS__',json.dumps(payload))
             .replace('__STADIA_KEY__',STADIA_KEY).replace('__TF_KEY__',THUNDERFOREST_KEY).replace('__CARTO_KEY__',CARTO_KEY).replace('__JAWG_KEY__',JAWG_KEY))
 
+def csv_for_gpx(gpx_path, csvs):
+    """The walk CSV for a GPX, by filename stamp first.
+
+    GPS/REC_<stamp>.gpx pairs with GPS/REC_<stamp>_GPS.csv. Time overlap is kept as a
+    fallback for oddly named files, but a stamp match is exact: overlap alone can pick the
+    wrong recording when two walks are close together or one CSV is missing.
+    """
+    import os as _os
+    stem = _os.path.splitext(_os.path.basename(gpx_path))[0]
+    for p in csvs:
+        b = _os.path.splitext(_os.path.basename(p))[0]
+        if b == stem + '_GPS' or b == stem:
+            return p
+    return None
+
+
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument('walks_dir',nargs='?',default='.')
@@ -429,11 +445,16 @@ def main():
     for gpx in gpx_files:
         pts,name=parse_gpx(gpx); stem=os.path.splitext(os.path.basename(gpx))[0]
         if len(pts)<2: print(f"[skip] {stem}: <2 pts"); continue
-        g0,g1=pts[0]['tms'],pts[-1]['tms']; best,ov=None,0
-        for p,r in csvs.items():
-            if not r: continue
-            o=max(0,min(g1,r[1])-max(g0,r[0]))
-            if o>ov: ov,best=o,p
+        best = csv_for_gpx(gpx, csvs)          # exact stamp match
+        if best is None:                        # fallback: largest time overlap
+            g0,g1=pts[0]['tms'],pts[-1]['tms']; ov=0
+            for p,r in csvs.items():
+                if not r: continue
+                o=max(0,min(g1,r[1])-max(g0,r[0]))
+                if o>ov: ov,best=o,p
+            if best:
+                print(f'[note] {stem}: no REC_<stamp>_GPS.csv; using '
+                      f'{os.path.basename(best)} by time overlap')
         tags=tagged_from_csv(best,pts) if best else [None]*len(pts)
         gis,gsrc=classify_points([(p['lon'],p['lat']) for p in pts],layers)
         tagged_fc=seg_fc(pts,tags,'tag'); gis_fc=seg_fc(pts,gis,'surface')

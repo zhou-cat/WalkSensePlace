@@ -36,6 +36,16 @@ own.add_argument('--frame-width', type=int, default=1100,
                  help='target map width in pixels (shrinks to fit the window)')
 own.add_argument('--start-clean', action='store_true',
                  help='open pages already in screenshot mode')
+own.add_argument('--legend-scale', type=float, default=None,
+                 help='scale the legend separately from the credits (defaults to '
+                      '--text-scale). Lower it when the legend crowds the map; the caption '
+                      'can carry the colours instead.')
+own.add_argument('--no-legend', action='store_true',
+                 help='omit the in-frame legend entirely (name the colours in the caption)')
+own.add_argument('--legend-compact', action='store_true', default=True,
+                 help='lay the surface swatches out in one row, with no heading (default)')
+own.add_argument('--legend-rows', dest='legend_compact', action='store_false',
+                 help='one swatch per line, with headings, as before')
 own.add_argument('--text-scale', type=float, default=1.0,
                  help='enlarge the legend and map credits by this factor (e.g. 1.5) so they '
                       'stay readable once the screenshot is shrunk to figure size')
@@ -55,7 +65,7 @@ def sw(s, a, b):
 H = sat.HTML
 # ---- layout: a sized frame instead of a 74vh map ----
 H = sw(H, "#map{height:74vh}#timeline{height:26vh;overflow-y:auto;overflow-x:hidden;background:#fafafa;border-top:1px solid #ddd}",
-       ":root{--ts:__TEXT_SCALE__}"
+       ":root{--ts:__TEXT_SCALE__;--ls:__LEGEND_SCALE__}"
        "body{background:#e9e9e9}"
        "#stage{display:flex;justify-content:center;align-items:flex-start;gap:8px;margin-top:12px}"
        "#tools{position:relative;width:44px;flex:0 0 44px}"
@@ -66,7 +76,10 @@ H = sw(H, "#map{height:74vh}#timeline{height:26vh;overflow-y:auto;overflow-x:hid
        "#timeline{margin:0 auto 12px;background:#fff;overflow:hidden}"
        ".maplegend{background:rgba(255,255,255,.93);padding:6px 9px;border-radius:6px;font:12.5px/1.4 -apple-system,Segoe UI,Roboto,sans-serif;box-shadow:0 1px 4px rgba(0,0,0,.25);color:#222}"
        ".leaflet-control-attribution{font-size:11px !important;zoom:var(--ts)}"
-       ".maplegend{zoom:var(--ts)}"
+       ".maplegend{zoom:var(--ls)}"
+       ".maplegend.compact{padding:3px 6px;line-height:1.15}"
+       ".maplegend.compact .row{display:flex;gap:9px;align-items:center;white-space:nowrap}"
+       ".maplegend.compact .ramp{margin-top:3px}"
        "#shotbtn{position:fixed;right:10px;bottom:10px;z-index:3000;padding:6px 10px;border-radius:7px;border:1px solid #bbb;background:#fff;cursor:pointer;font-size:12px}"
        ".shot .panel{display:none !important}"
        ".shot #shotbtn{opacity:.12}.shot #shotbtn:hover{opacity:1}")
@@ -110,16 +123,33 @@ const LegendCtl=L.Control.extend({options:{position:'__LEGEND_POS__'},
 new LegendCtl().addTo(map);
 function renderMapLegend(){
   const el=document.getElementById('maplegend'); if(!el) return;
-  const chip=k=>`<span style="display:inline-block;width:18px;height:7px;border-radius:3px;background:${palette()[k]};margin-right:7px;vertical-align:middle"></span>`;
-  let h='<div style="font-weight:600;margin-bottom:1px">surface</div>'+
-        ['paved','grass','loose','unknown'].map(k=>`<div>${chip(k)}${k}</div>`).join('');
-  activeLayers().filter(Ly=>Ly.mode==='cont').forEach(Ly=>{
-    const stops=rampFor(Ly).map(s=>s[1]).join(','), e=_ends[Ly.name]||['low','high'];
-    h+=`<div style="font-weight:600;margin-top:7px">${Ly.name}</div>`+
-       `<div style="width:160px;height:9px;border-radius:3px;background:linear-gradient(to right,${stops})"></div>`+
-       `<div style="display:flex;justify-content:space-between;width:160px;font-size:11px;color:#444"><span>0 ${e[0]}</span><span>100 ${e[1]}</span></div>`;});
+  if(__NO_LEGEND__){ el.style.display='none'; return; }
+  const chip=k=>`<span style="display:inline-block;width:14px;height:7px;border-radius:3px;background:${palette()[k]};margin-right:5px;vertical-align:middle"></span>`;
+  // only the classes actually present on this walk's drawn layers
+  const used=new Set(); activeLayers().filter(Ly=>Ly.mode==='cat').forEach(Ly=>
+    (Ly.fc.features||[]).forEach(f=>{const v=f.properties[Ly.key]; if(v) used.add(v);}));
+  const keys=['paved','grass','loose','unknown'].filter(k=>used.size?used.has(k):true);
+  let h='';
+  if(COMPACT){
+    el.classList.add('compact');
+    h='<div class="row">'+keys.map(k=>`<span>${chip(k)}${k}</span>`).join('')+'</div>';
+    activeLayers().filter(Ly=>Ly.mode==='cont').forEach(Ly=>{
+      const stops=rampFor(Ly).map(s=>s[1]).join(','), e=_ends[Ly.name]||['low','high'];
+      h+=`<div class="row ramp"><span>${Ly.name}</span>`+
+         `<span style="width:92px;height:8px;border-radius:3px;background:linear-gradient(to right,${stops});display:inline-block"></span>`+
+         `<span>${e[0]}\u2013${e[1]}</span></div>`;});
+  } else {
+    h='<div style="font-weight:600;margin-bottom:1px">surface</div>'+
+      keys.map(k=>`<div>${chip(k)}${k}</div>`).join('');
+    activeLayers().filter(Ly=>Ly.mode==='cont').forEach(Ly=>{
+      const stops=rampFor(Ly).map(s=>s[1]).join(','), e=_ends[Ly.name]||['low','high'];
+      h+=`<div style="font-weight:600;margin-top:7px">${Ly.name}</div>`+
+         `<div style="width:160px;height:9px;border-radius:3px;background:linear-gradient(to right,${stops})"></div>`+
+         `<div style="display:flex;justify-content:space-between;width:160px;font-size:11px;color:#444"><span>0 ${e[0]}</span><span>100 ${e[1]}</span></div>`;});
+  }
   el.innerHTML=h;
-}""")
+}
+const COMPACT=__COMPACT__;""")
 # ---- start-up: size the frame first, legend follows every refresh, screenshot toggle ----
 H = sw(H, "applyScrim(); refreshAll(); window.addEventListener('resize',buildTimeline);",
        """const _refreshAll=refreshAll; refreshAll=function(){_refreshAll(); renderMapLegend();};
@@ -136,7 +166,11 @@ if(__START_SHOT__) document.body.classList.add('shot');""")
 H = (H.replace('__FRAME_W__', str(int(A.frame_width)))
       .replace('__LEGEND_POS__', A.legend_pos)
       .replace('__START_SHOT__', 'true' if A.start_clean else 'false')
-      .replace('__TEXT_SCALE__', f'{max(0.5, A.text_scale):g}'))
+      .replace('__TEXT_SCALE__', f'{max(0.5, A.text_scale):g}')
+      .replace('__LEGEND_SCALE__',
+               f'{max(0.4, A.legend_scale if A.legend_scale is not None else A.text_scale):g}')
+      .replace('__NO_LEGEND__', 'true' if A.no_legend else 'false')
+      .replace('__COMPACT__', 'true' if A.legend_compact else 'false'))
 sat.HTML = H
 
 # default output folder: walk_maps_screenshot, so the satellite maps are not overwritten

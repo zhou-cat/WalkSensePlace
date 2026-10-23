@@ -1,0 +1,86 @@
+{
+ "segmentation": "events",
+ "gc_dir": "C:\\Users\\Sam\\WalkSensePlace\\Ground Contact",
+ "holdout": "walk",
+ "hardness_weights": "balanced",
+ "xgb": {
+  "max_depth": 4,
+  "n_estimators": 250,
+  "learning_rate": 0.05,
+  "subsample": 0.9,
+  "colsample_bytree": 0.8,
+  "eval_metric": "mlogloss",
+  "random_state": 42,
+  "verbosity": 0
+ },
+ "model": "cnn",
+ "class_weight_strength": 0.5,
+ "n_features_3class": null,
+ "evenness_scaler": "Individual Users\\..\\Charts_Graphs\\evenness_scaler_events.json",
+ "step_time": "initial contact",
+ "walks": {
+  "REC_20260514_173910": {
+   "walk_csv": "GPS\\REC_20260514_173910_GPS.csv",
+   "in_training": true,
+   "fitted": "held out (walk)",
+   "steps": 186,
+   "cnn_windows": 188
+  },
+  "REC_20260514_174319": {
+   "walk_csv": "GPS\\REC_20260514_174319_GPS.csv",
+   "in_training": true,
+   "fitted": "held out (walk)",
+   "steps": 203,
+   "cnn_windows": 208
+  },
+  "REC_20260514_174713": {
+   "walk_csv": "GPS\\REC_20260514_174713_GPS.csv",
+   "in_training": true,
+   "fitted": "held out (walk)",
+   "steps": 420,
+   "cnn_windows": 427
+  },
+  "REC_20260514_175445": {
+   "walk_csv": "GPS\\REC_20260514_175445_GPS.csv",
+   "in_training": true,
+   "fitted": "held out (walk)",
+   "steps": 527,
+   "cnn_windows": 532
+  },
+  "REC_20260514_180315": {
+   "walk_csv": "GPS\\REC_20260514_180315_GPS.csv",
+   "in_training": true,
+   "fitted": "held out (walk)",
+   "steps": 417,
+   "cnn_windows": 419
+  },
+  "REC_20260519_154547": {
+   "walk_csv": "GPS\\REC_20260519_154547_GPS.csv",
+   "in_training": true,
+   "fitted": "held out (walk)",
+   "steps": 171,
+   "cnn_windows": 175
+  },
+  "REC_20260519_155015": {
+   "walk_csv": "GPS\\REC_20260519_155015_GPS.csv",
+   "in_training": true,
+   "fitted": "held out (walk)",
+   "steps": 478,
+   "cnn_windows": 485
+  },
+  "REC_20260519_155900": {
+   "walk_csv": "GPS\\REC_20260519_155900_GPS.csv",
+   "in_training": true,
+   "fitted": "held out (walk)",
+   "steps": 585,
+   "cnn_windows": 590
+  },
+  "REC_20260519_161001": {
+   "walk_csv": "GPS\\REC_20260519_161001_GPS.csv",
+   "in_training": true,
+   "fitted": "held out (walk)",
+   "steps": 650,
+   "cnn_windows": 654
+  }
+ }
+}
