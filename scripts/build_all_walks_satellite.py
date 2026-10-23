@@ -69,8 +69,17 @@ STADIA_KEY = os.environ.get('STADIA_KEY', '377f7e02-33d0-4f45-bd6e-c273fe50c30e'
 LINE_ROLES = ['truth', 'gis', 'model3', 'evenness', 'hardness', 'plain']
 DEFAULT_ON = ['truth', 'gis', 'model3']
 
-RAMP_EVEN = [[0, '#e05a44'], [0.5, '#ffdd77'], [1, '#3aa05a']]
-RAMP_HARD = [[0, '#5566cc'], [0.5, '#dcdcdc'], [1, '#cc4455']]
+# Colour-vision-safe palette, matching scripts/figstyle.py so the maps and the paper's
+# charts agree. These are Okabe-Ito colours, chosen by exhaustive search for the largest
+# worst-case separation under normal vision and all three common deficiencies; the
+# previous green/brown/blue-grey set separated grass from loose almost entirely along a
+# hue axis that red-green colour-blind readers cannot see.
+#   paved  sky blue   #56B4E9      grass  black   #000000
+#   loose  vermillion #D55E00      unknown purple #CC79A7
+# The continuous ramps are blue-to-orange, the standard CVD-safe diverging pair, and both
+# ends differ in lightness so they survive greyscale printing.
+RAMP_EVEN = [[0, '#D55E00'], [0.5, '#F2F2F2'], [1, '#0072B2']]   # rough -> smooth
+RAMP_HARD = [[0, '#0072B2'], [0.5, '#F2F2F2'], [1, '#D55E00']]   # soft  -> hard
 
 HTML = r"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>__NAME__</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -140,12 +149,19 @@ const ORDER=__GIS_ORDER__, GIS_AVAIL=new Set(__GIS_AVAIL__);
 const SRC_LABEL={sidewalk:'sidewalk inventory',osm:'OpenStreetMap paths',landcover:'land cover',open_space:'open space'};
 const HAS_GIS=!!(GISMAP&&GISMAP.features&&GISMAP.features.length);
 
-const COL_MUTED={paved:'#557090',grass:'#43a047',loose:'#8a6844',unknown:'#AEAEAE',hard:'#557090',soft:'#43a047',dirt:'#8a6844',plain:'#111111'};
-const COL_BOLD ={paved:'#557090',grass:'#43a047',loose:'#8a6844',unknown:'#AEAEAE',hard:'#557090',soft:'#43a047',dirt:'#8a6844',plain:'#111111'};
+// colour-vision-safe, matching scripts/figstyle.py (see the note by RAMP_EVEN)
+const COL_MUTED={paved:'#56B4E9',grass:'#000000',loose:'#D55E00',unknown:'#CC79A7',hard:'#0072B2',soft:'#E69F00',dirt:'#D55E00',plain:'#111111'};
+const COL_BOLD ={paved:'#56B4E9',grass:'#000000',loose:'#D55E00',unknown:'#CC79A7',hard:'#0072B2',soft:'#E69F00',dirt:'#D55E00',plain:'#111111'};
 const RAMP_BOLD={evenness:[[0,'#FF1744'],[0.5,'#FFEA00'],[1,'#00E676']],
                  hardness:[[0,'#2979FF'],[0.5,'#FFFFFF'],[1,'#FF1744']]};
 let SAT=true, BOLD=true, SCRIM=__SCRIM__/100, GIS_OP=__GIS_OP__/100;
 const palette=()=>(SAT&&BOLD)?COL_BOLD:COL_MUTED;
+// The GIS surface polygons are a BASEMAP under the lines, so they get their own lighter
+// tints of the same hues rather than the line colours: with grass drawn black, reusing the
+// line palette would fill a whole park solid black. Each fill stays >=14 CIELAB apart from
+// the others under every colour-vision deficiency, and each is clearly lighter than the
+// line of the same class (grass by 69, loose by 27), so line and polygon never read alike.
+const COL_GIS={paved:'#BDD7EE',grass:'#A9A9A9',loose:'#F2C193',unknown:'#DDBBD0'};
 const catcol=s=>palette()[(s||'unknown').toLowerCase()]||palette().unknown;
 function _hx(c){return [parseInt(c.slice(1,3),16),parseInt(c.slice(3,5),16),parseInt(c.slice(5,7),16)];}
 function _mix(a,b,t){const A=_hx(a),B=_hx(b);return 'rgb('+A.map((x,i)=>Math.round(x+(B[i]-x)*t)).join(',')+')';}
@@ -196,7 +212,7 @@ BARE_F['CARTO Positron']=carto;
 
 // ---- GIS surface polygons ----
 const GIS_RENDER=L.canvas({pane:'gisPane',padding:0.5});
-function gisStyle(f){const c=COL_MUTED[(f.properties.surface||'unknown')]||COL_MUTED.unknown;
+function gisStyle(f){const c=COL_GIS[(f.properties.surface||'unknown')]||COL_GIS.unknown;
   return {fillColor:c,fillOpacity:GIS_OP,color:c,weight:0.6,opacity:Math.min(1,GIS_OP+0.25)};}
 function makeGis(){return L.geoJSON(GISMAP,{pane:'gisPane',renderer:GIS_RENDER,style:gisStyle,
   onEachFeature:(f,ly)=>ly.bindPopup(`GIS: <b>${f.properties.surface}</b><br><span style="color:#777">from ${f.properties.src==='osm'?'OpenStreetMap':f.properties.src}`+(f.properties.tag?` (surface=${f.properties.tag})`:'')+`</span>`)});}
