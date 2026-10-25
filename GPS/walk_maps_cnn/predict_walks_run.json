@@ -81,6 +81,132 @@
    "fitted": "held out (walk)",
    "steps": 650,
    "cnn_windows": 654
+  },
+  "REC_20260918_192244": {
+   "walk_csv": "GPS\\REC_20260918_192244_GPS.csv",
+   "in_training": true,
+   "fitted": "held out (walk)",
+   "steps": 520,
+   "cnn_windows": 523
+  },
+  "REC_20260922_212932": {
+   "walk_csv": "GPS\\REC_20260922_212932_GPS.csv",
+   "in_training": true,
+   "fitted": "held out (walk)",
+   "steps": 237,
+   "cnn_windows": 240
+  },
+  "REC_20260922_213753": {
+   "walk_csv": "GPS\\REC_20260922_213753_GPS.csv",
+   "in_training": true,
+   "fitted": "held out (walk)",
+   "steps": 140,
+   "cnn_windows": 142
+  },
+  "REC_20260922_214527": {
+   "walk_csv": "GPS\\REC_20260922_214527_GPS.csv",
+   "in_training": true,
+   "fitted": "held out (walk)",
+   "steps": 146,
+   "cnn_windows": 148
+  },
+  "REC_20260922_214900": {
+   "walk_csv": "GPS\\REC_20260922_214900_GPS.csv",
+   "in_training": true,
+   "fitted": "held out (walk)",
+   "steps": 132,
+   "cnn_windows": 135
+  },
+  "REC_20261001_130532": {
+   "walk_csv": "GPS\\REC_20261001_130532_GPS.csv",
+   "in_training": true,
+   "fitted": "held out (walk)",
+   "steps": 268,
+   "cnn_windows": 270
+  },
+  "REC_20261001_132041": {
+   "walk_csv": "GPS\\REC_20261001_132041_GPS.csv",
+   "in_training": true,
+   "fitted": "held out (walk)",
+   "steps": 354,
+   "cnn_windows": 357
+  },
+  "REC_20261001_132818": {
+   "walk_csv": "GPS\\REC_20261001_132818_GPS.csv",
+   "in_training": true,
+   "fitted": "held out (walk)",
+   "steps": 111,
+   "cnn_windows": 114
+  },
+  "REC_20261001_134408": {
+   "walk_csv": "GPS\\REC_20261001_134408_GPS.csv",
+   "in_training": true,
+   "fitted": "held out (walk)",
+   "steps": 208,
+   "cnn_windows": 210
+  },
+  "REC_20261001_134854": {
+   "walk_csv": "GPS\\REC_20261001_134854_GPS.csv",
+   "in_training": true,
+   "fitted": "held out (walk)",
+   "steps": 179,
+   "cnn_windows": 181
+  },
+  "REC_20261005_201019": {
+   "walk_csv": "GPS\\REC_20261005_201019_GPS.csv",
+   "in_training": true,
+   "fitted": "held out (walk)",
+   "steps": 259,
+   "cnn_windows": 261
+  },
+  "REC_20261006_211050": {
+   "walk_csv": "GPS\\REC_20261006_211050_GPS.csv",
+   "in_training": true,
+   "fitted": "held out (walk)",
+   "steps": 318,
+   "cnn_windows": 320
+  },
+  "REC_20261006_212716": {
+   "walk_csv": "GPS\\REC_20261006_212716_GPS.csv",
+   "in_training": true,
+   "fitted": "held out (walk)",
+   "steps": 238,
+   "cnn_windows": 241
+  },
+  "REC_20261006_213411": {
+   "walk_csv": "GPS\\REC_20261006_213411_GPS.csv",
+   "in_training": true,
+   "fitted": "held out (walk)",
+   "steps": 304,
+   "cnn_windows": 308
+  },
+  "REC_20261006_214245": {
+   "walk_csv": "GPS\\REC_20261006_214245_GPS.csv",
+   "in_training": true,
+   "fitted": "held out (walk)",
+   "steps": 297,
+   "cnn_windows": 308
+  },
+  "REC_20261011_205608": {
+   "walk_csv": "GPS\\REC_20261011_205608_GPS.csv",
+   "in_training": true,
+   "fitted": "held out (walk)",
+   "steps": 306,
+   "cnn_windows": 308
+  },
+  "REC_20261011_210233": {
+   "walk_csv": "GPS\\REC_20261011_210233_GPS.csv",
+   "in_training": true,
+   "fitted": "held out (walk)",
+   "steps": 250,
+   "cnn_windows": 252
+  },
+  "REC_20261011_210756": {
+   "walk_csv": "GPS\\REC_20261011_210756_GPS.csv",
+   "in_training": true,
+   "fitted": "held out (walk)",
+   "steps": 254,
+   "cnn_windows": 256
   }
  }
 }

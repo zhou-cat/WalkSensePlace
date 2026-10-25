@@ -36,6 +36,7 @@ import predict_walks as pw  # noqa: E402
 
 CL3 = ['grass', 'loose', 'paved']
 MODES = ['as mapped', 'leave-one-walk-out', 'leave-one-user-out']
+TRUTH = 'Ground truth'          # composition only; it has no agreement with itself
 
 
 def metrics(yt, yp):
@@ -44,9 +45,14 @@ def metrics(yt, yp):
     if not len(yt):
         return dict(n=0)
     f1 = f1_score(yt, yp, labels=CL3, average=None, zero_division=0)
+    # Composition over the SAME scored steps as the agreement, so every row shares one
+    # denominator and the rows are directly comparable. (make_map_prop.py instead counts
+    # each layer's own segments, so its denominators differ between sources.) Shares do not
+    # sum to 100 where a source leaves steps unlabelled; that remainder is unlabeled_pct.
+    share = {f'share_{c}': float(100 * np.mean(yp == c)) for c in CL3}
     return dict(n=len(yt), accuracy=float((yt == yp).mean()), macro_f1=float(f1.mean()),
                 f1_grass=float(f1[0]), f1_loose=float(f1[1]), f1_paved=float(f1[2]),
-                unlabeled_pct=float(100 * np.mean(yp == 'unknown')))
+                unlabeled_pct=float(100 * np.mean(yp == 'unknown')), **share)
 
 
 def gis_at_steps(pts, gis_seg_vals, step_t, max_gap_ms=1500):
@@ -127,9 +133,20 @@ def main():
     a.out = a.out or a.gis_dir
 
     # which reach built the GIS labels? (written by build_all_walks_satellite.py)
+    TRIM = {}
     summ = os.path.join(a.gis_dir, 'summary.csv')
     if os.path.exists(summ):
         sm = pd.read_csv(summ)
+        if {'walk', 'trim_start', 'trim_end'} <= set(sm.columns):
+            # build_all_walks_satellite.py trims each track to the span where the ground
+            # truth is known, so its geojsons cover GPX points [trim_start : trim_end+1].
+            # Without applying the same slice, the segment counts disagree and every
+            # trimmed walk looks like a GPX mismatch.
+            TRIM = {str(r.walk): (int(r.trim_start), int(r.trim_end))
+                    for r in sm.itertuples() if pd.notna(r.trim_start)}
+            _nt = sum(1 for v in TRIM.values() if v[0] or v[1])
+            if _nt:
+                print(f'  {_nt} walk(s) were trimmed; applying the same slice here')
         rc = [c for c in sm.columns if c.startswith('reach_')]
         print('GIS labels built with reach (m): ' +
               (', '.join(f"{c[6:-2]} {sm[c].iloc[0]:g}" for c in rc) if rc else
@@ -194,10 +211,18 @@ def main():
             return None
         return pw.train_surface(sub, drop, False)
 
-    per_walk, pooled = [], {k: ([], []) for k in ['GIS'] + MODES}
+    per_walk, pooled = [], {k: ([], []) for k in [TRUTH, 'GIS'] + MODES}
     for gpx in sorted(glob.glob(os.path.join(a.walks_dir, '*.gpx'))):
         stem = os.path.splitext(os.path.basename(gpx))[0]
         pts = pw.parse_gpx(gpx)
+        _tr = TRIM.get(stem)
+        if _tr:
+            lo_, hi_ = _tr
+            if hi_ + 1 <= len(pts):
+                pts = pts[lo_:hi_ + 1]
+            else:
+                print(f'[warn] {stem}: summary.csv says points {lo_}-{hi_} but the GPX has '
+                      f'{len(pts)} - not slicing'); 
         gpath = os.path.join(a.gis_dir, f'{stem}_surface.geojson')
         if len(pts) < 2 or not os.path.exists(gpath):
             print(f'[skip] {stem}: ' + ('<2 GPS points' if len(pts) < 2 else f'no {gpath}'))
@@ -218,7 +243,9 @@ def main():
                    for f in json.load(open(gpath))['features']]
         if len(gis_seg) != len(pts) - 1:
             print(f'[warn] {stem}: GIS file has {len(gis_seg)} segments for {len(pts)} GPS '
-                  'points - built from a different GPX? skipped'); continue
+                  f'point(s)'
+                  + ('' if _tr else ' and summary.csv records no trim for it')
+                  + ' - the layer and the GPX do not line up, skipped'); continue
         g = gis_at_steps(pts, gis_seg, t)
         keep = np.array([v is not None for v in g])
         if not keep.any():
@@ -249,7 +276,7 @@ def main():
               f'features from {rec} | recording {rb} {"IS" if in_train else "is NOT"} in training'
               + (f', user {u}' if u else ', user unknown - no leave-one-user-out'))
 
-        for src, yp in [('GIS', gis)] + [(m, preds[m]) for m in MODES]:
+        for src, yp in [('Ground truth', yt), ('GIS', gis)] + [(m, preds[m]) for m in MODES]:
             if yp is None or len(yp) != len(yt):
                 continue
             per_walk.append(dict(walk=stem, source=src, in_training=in_train, **metrics(yt, yp)))
@@ -263,18 +290,33 @@ def main():
     pw_df.to_csv(os.path.join(a.out, 'gis_table_per_walk.csv'), index=False)
     po_df.to_csv(os.path.join(a.out, 'gis_table_pooled.csv'), index=False)
 
-    label = {'GIS': 'GIS (4 sources)', 'as mapped': '3-class model, as mapped',
+    label = {TRUTH: 'Ground truth', 'GIS': 'GIS (4 sources)',
+             'as mapped': '3-class model, as mapped',
              'leave-one-walk-out': '3-class model, leave-one-walk-out',
              'leave-one-user-out': '3-class model, leave-one-user-out'}
     print(f"\nPooled over {pw_df.walk.nunique()} walks, by step:")
-    print(f"  {'source':36s} {'n':>6s} {'acc':>6s} {'mF1':>6s} {'grass':>6s} {'loose':>6s} {'paved':>6s} {'unlab%':>7s}")
+    print(f"  {'source':36s} {'n':>6s} {'acc':>6s} {'mF1':>6s} {'grass':>6s} {'loose':>6s} "
+          f"{'paved':>6s} {'unlab%':>7s} | {'%grass':>7s} {'%loose':>7s} {'%paved':>7s}")
     lines = []
     for _, r in po_df.iterrows():
-        print(f"  {label[r['source']]:36s} {int(r['n']):6d} {r['accuracy']:6.3f} {r['macro_f1']:6.3f} "
-              f"{r['f1_grass']:6.3f} {r['f1_loose']:6.3f} {r['f1_paved']:6.3f} {r['unlabeled_pct']:7.1f}")
-        lines.append(f"{label[r['source']]} & {fmt(r['accuracy'])} & {fmt(r['macro_f1'])} & "
-                     f"{fmt(r['f1_grass'])} & {fmt(r['f1_loose'])} & {fmt(r['f1_paved'])} & "
-                     f"{fmt(r['unlabeled_pct'], pct=True)} \\\\")
+        _is_t = r['source'] == TRUTH
+        _ag = ('      --     --     --     --     --      --' if _is_t else
+               f"{r['accuracy']:6.3f} {r['macro_f1']:6.3f} {r['f1_grass']:6.3f} "
+               f"{r['f1_loose']:6.3f} {r['f1_paved']:6.3f} {r['unlabeled_pct']:7.1f}")
+        print(f"  {label[r['source']]:36s} {int(r['n']):6d} {_ag} | "
+              f"{r['share_grass']:6.2f}% {r['share_loose']:6.2f}% {r['share_paved']:6.2f}%")
+        _cols = (['---'] * 5 if _is_t else
+                 [fmt(r['accuracy']), fmt(r['macro_f1']), fmt(r['f1_grass']),
+                  fmt(r['f1_loose']), fmt(r['f1_paved'])])
+        lines.append(' & '.join([label[r['source']]] + _cols
+                     + [f"{r['share_grass']:.2f}\\%", f"{r['share_loose']:.2f}\\%",
+                        f"{r['share_paved']:.2f}\\%"]) + ' \\\\')
+    _gisrow = po_df[po_df.source == 'GIS']
+    if len(_gisrow):
+        lines.append('\\midrule')
+        lines.append('\\multicolumn{6}{@{}l}{GIS steps left unclassified} & '
+                     '\\multicolumn{3}{c}{%.2f\\%%} \\\\'
+                     % float(_gisrow.unlabeled_pct.iloc[0]))
     open(os.path.join(a.out, 'gis_table_rows.tex'), 'w').write('\n'.join(lines) + '\n')
     gap = (po_df.set_index('source').macro_f1.get('as mapped', np.nan)
            - po_df.set_index('source').macro_f1.get('leave-one-walk-out', np.nan))

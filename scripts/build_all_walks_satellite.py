@@ -150,18 +150,18 @@ const SRC_LABEL={sidewalk:'sidewalk inventory',osm:'OpenStreetMap paths',landcov
 const HAS_GIS=!!(GISMAP&&GISMAP.features&&GISMAP.features.length);
 
 // colour-vision-safe, matching scripts/figstyle.py (see the note by RAMP_EVEN)
-const COL_MUTED={paved:'#56B4E9',grass:'#000000',loose:'#D55E00',unknown:'#CC79A7',hard:'#0072B2',soft:'#E69F00',dirt:'#D55E00',plain:'#111111'};
-const COL_BOLD ={paved:'#56B4E9',grass:'#000000',loose:'#D55E00',unknown:'#CC79A7',hard:'#0072B2',soft:'#E69F00',dirt:'#D55E00',plain:'#111111'};
+const COL_MUTED={paved:'#56B4E9',grass:'#009E73',loose:'#D55E00',unknown:'#CC79A7',hard:'#0072B2',soft:'#E69F00',dirt:'#D55E00',plain:'#111111'};
+const COL_BOLD ={paved:'#56B4E9',grass:'#009E73',loose:'#D55E00',unknown:'#CC79A7',hard:'#0072B2',soft:'#E69F00',dirt:'#D55E00',plain:'#111111'};
 const RAMP_BOLD={evenness:[[0,'#FF1744'],[0.5,'#FFEA00'],[1,'#00E676']],
                  hardness:[[0,'#2979FF'],[0.5,'#FFFFFF'],[1,'#FF1744']]};
 let SAT=true, BOLD=true, SCRIM=__SCRIM__/100, GIS_OP=__GIS_OP__/100;
 const palette=()=>(SAT&&BOLD)?COL_BOLD:COL_MUTED;
-// The GIS surface polygons are a BASEMAP under the lines, so they get their own lighter
-// tints of the same hues rather than the line colours: with grass drawn black, reusing the
-// line palette would fill a whole park solid black. Each fill stays >=14 CIELAB apart from
-// the others under every colour-vision deficiency, and each is clearly lighter than the
-// line of the same class (grass by 69, loose by 27), so line and polygon never read alike.
-const COL_GIS={paved:'#BDD7EE',grass:'#A9A9A9',loose:'#F2C193',unknown:'#DDBBD0'};
+// The GIS surface polygons use the SAME palette as the lines, so a reader matches a
+// polygon to a line by colour without a second key. That is possible because grass is
+// bluish green rather than black: a black fill would render a whole park as a dark mass.
+// The polygons are drawn at --gis-opacity under the lines, so they stay distinguishable
+// by lightness rather than by hue.
+const COL_GIS=COL_MUTED;   // polygons use the SAME palette as the lines
 const catcol=s=>palette()[(s||'unknown').toLowerCase()]||palette().unknown;
 function _hx(c){return [parseInt(c.slice(1,3),16),parseInt(c.slice(3,5),16),parseInt(c.slice(5,7),16)];}
 function _mix(a,b,t){const A=_hx(a),B=_hx(b);return 'rgb('+A.map((x,i)=>Math.round(x+(B[i]-x)*t)).join(',')+')';}
@@ -1004,19 +1004,33 @@ def build_html(name, layers, agree, lines_on, scrim, basemap, weight, truth_fx=T
             .replace('__STADIA_KEY__', STADIA_KEY))
 
 
-def csv_for_gpx(gpx_path, csvs):
-    """The walk CSV for a GPX, by filename stamp first.
+def csv_for_gpx(gpx_path, csvs, pts=None, ranges=None):
+    """The walk CSV for a GPX, by filename stamp, CONFIRMED against the clock.
 
-    GPS/REC_<stamp>.gpx pairs with GPS/REC_<stamp>_GPS.csv. Time overlap is kept as a
-    fallback for oddly named files, but a stamp match is exact: overlap alone can pick the
-    wrong recording when two walks are close together or one CSV is missing.
+    GPS/REC_<stamp>.gpx should pair with GPS/REC_<stamp>_GPS.csv - but a file can be
+    misnamed, and then the names agree while the data does not. So a stamp match is only
+    returned if the two actually overlap in time; otherwise this returns None with a
+    warning and the caller falls back to overlap matching, which cannot make that mistake.
     """
     import os as _os
     stem = _os.path.splitext(_os.path.basename(gpx_path))[0]
+    hit = None
     for p in csvs:
         b = _os.path.splitext(_os.path.basename(p))[0]
         if b == stem + '_GPS' or b == stem:
-            return p
+            hit = p
+            break
+    if hit is None or not pts or not ranges or not ranges.get(hit):
+        return hit
+    g0, g1 = pts[0]['tms'], pts[-1]['tms']
+    c0, c1 = ranges[hit]
+    if max(0, min(g1, c1) - max(g0, c0)) > 0:
+        return hit
+    import datetime as _dt
+    f = lambda ms: _dt.datetime.fromtimestamp(ms / 1000, _dt.timezone.utc).strftime('%H:%M:%S')
+    print(f'  [WARN] {stem}: {_os.path.basename(hit)} matches by NAME but not in time - '
+          f'GPX {f(g0)}-{f(g1)} vs CSV {f(c0)}-{f(c1)} (no overlap). One of the two is '
+          'misnamed; ignoring the name match.')
     return None
 
 
@@ -1103,6 +1117,11 @@ def main():
                     help='cap on embedded GIS polygons per walk')
     ap.add_argument('--scrim', type=int, default=25,
                     help='white scrim over imagery, 0-90 percent (default 25)')
+    ap.add_argument('--no-trim', action='store_true',
+                    help='keep the unlabelled head and tail of each track. By default the '
+                         'track is clipped to the span where the ground truth is known, '
+                         'since the ends are GPX recorded before the first tag or after '
+                         'the last and carry no data.')
     ap.add_argument('--pred-dir', default=None,
                     help="folder holding <stem>_pred_3class.geojson etc. Point it at "
                          "predict_walks.py's --out to choose which model's predictions are "
@@ -1266,7 +1285,7 @@ def main():
         stem = os.path.splitext(os.path.basename(gpx))[0]
         if len(pts) < 2:
             print(f'[skip] {stem}: <2 pts'); continue
-        best = csv_for_gpx(gpx, csvs)          # exact stamp match
+        best = csv_for_gpx(gpx, csvs, pts, csvs)   # stamp match, confirmed by clock
         if best is None:                        # fallback: largest time overlap
             g0, g1 = pts[0]['tms'], pts[-1]['tms']
             ov = 0
@@ -1280,12 +1299,102 @@ def main():
                 print(f'[note] {stem}: no REC_<stamp>_GPS.csv; using {os.path.basename(best)} '
                       'by time overlap')
         tags = base.tagged_from_csv(best, pts) if best else [None] * len(pts)
+        # ---- trim the unlabelled head and tail -------------------------------------
+        # The GPX usually starts before the first tag and runs past the last, so the track
+        # opens and closes with segments no layer can label. Those ends carry no data and
+        # they stretch the map's extent, so the track is clipped to the span where the
+        # GROUND TRUTH is known. This happens BEFORE the GIS lookup so every layer is
+        # built on the trimmed track, and the prediction layers read from disk are cut by
+        # the same indices below. --no-trim keeps the whole track.
+        _npts_raw = len(pts)
+        # The model layer can be unknown at the ends even where the ground truth is not:
+        # its values come from insole STEPS matched onto fixes, and the last fixes of a
+        # track often have no step within the matching window. Read it now, before the
+        # trim, so the kept span is the part BOTH sources can label.
+        _pred_tail = _pred_head = 0
+        _pre = None
+        for _d in (a.pred_dir, a.out, os.path.join(a.walks_dir, 'walk_maps')):
+            _pp = os.path.join(_d, f'{stem}_pred_3class.geojson') if _d else None
+            if _pp and os.path.exists(_pp):
+                try:
+                    _pre = [(f['properties'] or {}).get('surface')
+                            for f in (json.load(open(_pp)).get('features') or [])]
+                except Exception:
+                    _pre = None
+                break
+        if _pre is not None and len(_pre) == len(tags):
+            while (_pred_head < len(_pre)
+                   and _pre[_pred_head] in (None, 'unknown')):
+                _pred_head += 1
+            while (_pred_tail < len(_pre) - _pred_head
+                   and _pre[-1 - _pred_tail] in (None, 'unknown')):
+                _pred_tail += 1
+        elif _pre is not None:
+            print(f'  [note] {stem}: prediction layer has {len(_pre)} segments for '
+                  f'{len(tags)} - written for a different track, not used for trimming')
+        _lo, _hi = 0, len(tags)
+        if not a.no_trim and tags:
+            while _lo < len(tags) and tags[_lo] is None:
+                _lo += 1
+            while _hi > _lo and tags[_hi - 1] is None:
+                _hi -= 1
+            # also drop ends the MODEL cannot label, so no layer starts or ends unknown
+            _lo = max(_lo, _pred_head)
+            _hi = min(_hi, len(tags) - _pred_tail)
+            if _pred_head or _pred_tail:
+                print(f'  {stem}: model layer unlabelled on {_pred_head} segment(s) at the '
+                      f'start and {_pred_tail} at the end; trimming to the span both '
+                      'sources cover')
+            if _hi <= _lo:
+                print(f'  [skip] {stem}: ground truth has no labelled segments'); continue
+            if _lo or _hi < len(tags):
+                _n0 = len(tags)
+                pts = pts[_lo:_hi + 1]
+                tags = tags[_lo:_hi]
+                print(f'  {stem}: trimmed {_lo} unlabelled segment(s) from the start, '
+                      f'{_n0 - _hi} from the end ({_hi - _lo} of {_n0} kept)')
         nearest = point_nearest([(p['lon'], p['lat']) for p in pts], layers, osm=osm)
         cands = apply_reach(nearest, reach)
         gis, gsrc = resolve_candidates(cands, order)
         if a.reach_sweep:
             for r_ in reach_sweep(nearest, tags, order, a.path_halfwidth, reach['landcover']):
                 sweep_rows.append(dict(walk=stem, **r_))
+        # ---- coverage checks, reported per walk ------------------------------------
+        # Ground truth: a run of unknowns at the START means the GPX began recording
+        # before the first surface marker, so the walk does not start where the tagging
+        # does. Unknowns in the MIDDLE are the recorded pauses and are expected.
+        _u = [i for i, v in enumerate(tags) if v is None]
+        if _u:
+            _lead = 0
+            while _lead < len(tags) and tags[_lead] is None:
+                _lead += 1
+            _trail = 0
+            while _trail < len(tags) and tags[-1 - _trail] is None:
+                _trail += 1
+            _mid = len(_u) - _lead - _trail
+            _msg = []
+            if _lead:
+                _msg.append(f'{_lead} at the START')
+            if _trail:
+                _msg.append(f'{_trail} at the END')
+            if _mid:
+                _msg.append(f'{_mid} in the middle (recorded pauses)')
+            _bad = _lead or _trail
+            print(f'  {"[WARN]" if _bad else "  note"} {stem}: ground truth unlabelled on '
+                  f'{len(_u)}/{len(tags)} segments - ' + ', '.join(_msg))
+            if _bad:
+                print('          a leading or trailing run means the GPX extends beyond the '
+                      'tagged part of the walk; trim the GPX or tag from the first step.')
+        # GIS: no source answered anywhere is a coverage problem, not a classification one
+        _gu = sum(1 for v in gis if v in (None, 'unknown'))
+        if _gu == len(gis):
+            print(f'  [WARN] {stem}: GIS returned NOTHING for any segment. The walk is '
+                  'probably outside the loaded layers - check that the land-cover tile and '
+                  'the municipal sidewalk/open-space files cover these coordinates '
+                  f'({pts[0]["lat"]:.5f}, {pts[0]["lon"]:.5f}).')
+        elif _gu > 0.25 * len(gis):
+            print(f'  [WARN] {stem}: GIS unclassified on {100*_gu/len(gis):.0f}% of segments '
+                  '- likely partial coverage at the edge of a layer.')
         tagged_fc = base.seg_fc(pts, tags, 'tag')
         gis_fc = base.seg_fc(pts, gis, 'surface')
         json.dump(tagged_fc, open(os.path.join(a.out, f'{stem}_tagged.geojson'), 'w'))
@@ -1314,9 +1423,19 @@ def main():
                 pth = os.path.join(d, f'{stem}_{tag}.geojson')
                 if os.path.exists(pth):
                     try:
-                        return json.load(open(pth))
+                        fc_ = json.load(open(pth))
                     except Exception:
-                        pass
+                        continue
+                    f_ = fc_.get('features') or []
+                    # these were written for the untrimmed track; cut them to match, and
+                    # drop any unknown tail the model itself left
+                    if _lo or _hi < len(f_):
+                        if len(f_) >= _hi:
+                            fc_['features'] = f_[_lo:_hi]
+                        else:
+                            print(f'  [warn] {stem}: {tag} has {len(f_)} segments for a '
+                                  f'track of {_hi - _lo} - not trimmed, check it matches')
+                    return fc_
             return None
 
         maplayers = [('truth', draw_fc, 'tag', 'cat', None, 'truth'),
@@ -1375,6 +1494,9 @@ def main():
         gc = collections.Counter(gis); sc = collections.Counter(gsrc)
         tc = collections.Counter(t or 'unknown' for t in tags)
         rows.append({'walk': name, 'file': os.path.basename(gpx), 'points': len(pts),
+                     # the geojsons cover GPX points [trim_start : trim_end+1]; anything
+                     # reading them against the raw GPX must apply the same slice
+                     'trim_start': _lo, 'trim_end': _hi, 'gpx_points': _npts_raw,
                      'paired_csv': (os.path.basename(best) if best else 'NONE'),
                      'truth_paved': tc.get('paved', 0), 'truth_grass': tc.get('grass', 0),
                      'truth_loose': tc.get('loose', 0),

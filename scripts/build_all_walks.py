@@ -394,19 +394,33 @@ def build_html(name, layers, agree):
     return (HTML.replace('__NAME__',name).replace('__AGREE__',agree).replace('__LAYERS__',json.dumps(payload))
             .replace('__STADIA_KEY__',STADIA_KEY).replace('__TF_KEY__',THUNDERFOREST_KEY).replace('__CARTO_KEY__',CARTO_KEY).replace('__JAWG_KEY__',JAWG_KEY))
 
-def csv_for_gpx(gpx_path, csvs):
-    """The walk CSV for a GPX, by filename stamp first.
+def csv_for_gpx(gpx_path, csvs, pts=None, ranges=None):
+    """The walk CSV for a GPX, by filename stamp, CONFIRMED against the clock.
 
-    GPS/REC_<stamp>.gpx pairs with GPS/REC_<stamp>_GPS.csv. Time overlap is kept as a
-    fallback for oddly named files, but a stamp match is exact: overlap alone can pick the
-    wrong recording when two walks are close together or one CSV is missing.
+    GPS/REC_<stamp>.gpx should pair with GPS/REC_<stamp>_GPS.csv - but a file can be
+    misnamed, and then the names agree while the data does not. So a stamp match is only
+    returned if the two actually overlap in time; otherwise this returns None with a
+    warning and the caller falls back to overlap matching, which cannot make that mistake.
     """
     import os as _os
     stem = _os.path.splitext(_os.path.basename(gpx_path))[0]
+    hit = None
     for p in csvs:
         b = _os.path.splitext(_os.path.basename(p))[0]
         if b == stem + '_GPS' or b == stem:
-            return p
+            hit = p
+            break
+    if hit is None or not pts or not ranges or not ranges.get(hit):
+        return hit
+    g0, g1 = pts[0]['tms'], pts[-1]['tms']
+    c0, c1 = ranges[hit]
+    if max(0, min(g1, c1) - max(g0, c0)) > 0:
+        return hit
+    import datetime as _dt
+    f = lambda ms: _dt.datetime.fromtimestamp(ms / 1000, _dt.timezone.utc).strftime('%H:%M:%S')
+    print(f'  [WARN] {stem}: {_os.path.basename(hit)} matches by NAME but not in time - '
+          f'GPX {f(g0)}-{f(g1)} vs CSV {f(c0)}-{f(c1)} (no overlap). One of the two is '
+          'misnamed; ignoring the name match.')
     return None
 
 
@@ -445,7 +459,7 @@ def main():
     for gpx in gpx_files:
         pts,name=parse_gpx(gpx); stem=os.path.splitext(os.path.basename(gpx))[0]
         if len(pts)<2: print(f"[skip] {stem}: <2 pts"); continue
-        best = csv_for_gpx(gpx, csvs)          # exact stamp match
+        best = csv_for_gpx(gpx, csvs, pts, csvs)   # stamp match, confirmed by clock
         if best is None:                        # fallback: largest time overlap
             g0,g1=pts[0]['tms'],pts[-1]['tms']; ov=0
             for p,r in csvs.items():

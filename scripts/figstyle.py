@@ -13,8 +13,8 @@ Checked with a Vienot CVD simulation. Minimum pairwise CIELAB distance within ea
 colour group, where 10 is roughly the threshold for "clearly different":
 
     group                normal  deuter  protan  tritan
-    surface (3)            78.9    78.3    76.8    81.9
-    surface + unknown      48.3    52.0    48.3    57.3
+    surface (3)            57.4    34.4    31.2    28.4
+    surface + unknown      57.4    34.4    31.2    28.4
     two-class              120.2   130.8   121.7    84.2
     sources                 63.2    63.2    63.2    63.2
     feature sets            37.4    54.6    47.3    38.0
@@ -22,6 +22,11 @@ colour group, where 10 is roughly the threshold for "clearly different":
 For comparison, the previous green / brown / blue-grey surface palette scored 47.2 under
 normal vision but only 24.3, 16.0 and 5.2 under the three deficiencies - the three classes
 converged for exactly the readers who need them separated.
+
+Grass is bluish green rather than black so that ONE palette serves both the thin lines on
+the walk maps and the large translucent area fills of the GIS surface polygons: black
+fills a whole park as a dark mass, and a separate fill palette made the maps' lines and
+polygons disagree. All four colours sit in CIELAB L* 54-70, light enough to read as fills.
 """
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -41,7 +46,7 @@ LIGHT_GREY = '#BFBFBF'
 # ---- role assignments: use these names, not raw hex, so every figure agrees -------
 # Chosen by exhaustive search over the palette for the largest worst-case separation under
 # normal vision AND all three deficiencies (see the module docstring for the numbers).
-SURFACE = {'paved': SKY, 'grass': BLACK, 'loose': VERMILLION, 'unknown': PURPLE}
+SURFACE = {'paved': SKY, 'grass': GREEN, 'loose': VERMILLION, 'unknown': PURPLE}
 CLASS2 = {'hard': BLUE, 'soft': ORANGE}
 SOURCE = {'Ground truth': BLACK, 'GIS': GREY, 'Prediction model': VERMILLION}
 FEATSET = {'Full-50': GREY, 'Selected': BLUE, 'Raw windows': VERMILLION}
